@@ -21,6 +21,7 @@ public:
     // 自定义方法
     void setHeaders(const QVector<QString> &headers);
     void addRow(const QStringList &row);
+    void addRows(const QVector<QStringList> &rows);
     void clear();
 
 private:

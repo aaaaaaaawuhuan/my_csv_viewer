@@ -28,8 +28,11 @@ MainWindow::MainWindow(QWidget *parent)
 
     // 连接信号和槽
     connect(this, &MainWindow::initCsvReader, m_csvReader, &CsvReader::init);
+    connect(this, &MainWindow::requestRowsData, m_csvReader, &CsvReader::readRows); // 连接请求数据行的信号和槽
     connect(m_csvReader, &CsvReader::initializationDataReady, 
             this, &MainWindow::onInitializationDataReceived);
+    connect(m_csvReader, &CsvReader::rowDataReady, 
+            this, &MainWindow::onRowsDataReceived); // 连接数据行读取完成的信号和槽
 
     //init
     ui->dockWidget->hide();
@@ -159,17 +162,18 @@ void MainWindow::on_pushButton_filter_clicked()
     // 显示表格视图
     ui->tableView->show();
     
-    // TODO: 这里将添加实际的文件读取、解析和显示逻辑
-    // 目前只是显示一个消息表示功能已触发
-    statusBar()->showMessage(tr("筛选显示功能已触发，选中了%1列").arg(selectedColumns.size()), 3000);
+    // 清空之前的数据
+    m_tableModel->clear();
+    
+    // 重新设置表头
+    m_tableModel->setHeaders(m_headers);
+    
+    // 请求读取数据行（这里我们先读取前100行作为示例）
+    emit requestRowsData(1, 100); // 从第1行开始读取100行（跳过表头）
     
     endTiming(tr("筛选显示"));
 }
 
-void MainWindow::on_lineEdit_clowmn_name_textChanged(const QString &text)
-{
-    filterCheckboxes(text);
-}
 
 void MainWindow::filterCheckboxes(const QString &text)
 {
@@ -251,6 +255,7 @@ void MainWindow::toggleSelectAll(bool select)
     endTiming(select ? tr("全选") : tr("清空"));
 }
 
+
 void MainWindow::onInitializationDataReceived(const QVector<QString> &headers)
 {
     // 结束文件初始化计时
@@ -274,10 +279,68 @@ void MainWindow::onInitializationDataReceived(const QVector<QString> &headers)
     // 根据表头生成复选框
     generateColumnCheckboxes(headers);
     
+    // 保存表头信息
+    m_headers = headers;
+    
     // 设置表格模型的表头
     m_tableModel->setHeaders(headers);
     
     endTiming(tr("生成筛选面板"));
+}
+
+void MainWindow::on_lineEdit_clowmn_name_textChanged(const QString &text)
+{
+    // 根据输入的文本过滤复选框
+    QScrollArea *scrollArea = ui->dockWidgetContents->findChild<QScrollArea*>("scrollArea_select");
+    if (!scrollArea) return;
+    
+    QWidget *contentWidget = scrollArea->widget();
+    if (!contentWidget) return;
+
+    QVBoxLayout* layout = qobject_cast<QVBoxLayout*>(contentWidget->layout());
+    if (!layout) return;
+
+    // 遍历所有复选框
+    QList<QCheckBox*> checkBoxList = contentWidget->findChildren<QCheckBox*>();
+    for (QCheckBox *checkBox : checkBoxList) {
+        // 根据输入文本决定是否显示复选框
+        if (text.isEmpty() || text == "输入列名") {
+            // 如果输入框为空或为默认文本，显示所有复选框
+            checkBox->setVisible(true);
+        } else {
+            // 根据文本过滤复选框
+            if (checkBox->text().contains(text, Qt::CaseInsensitive)) {
+                checkBox->setVisible(true);
+            } else {
+                checkBox->setVisible(false);
+            }
+        }
+    }
+
+    // 重新调整布局以确保可见复选框紧密排列
+    layout->invalidate();
+}
+
+
+void MainWindow::onRowsDataReceived(const struct CsvRowData &rowData, qint64 startRow)
+{
+    Q_UNUSED(startRow);
+    
+    startTiming(tr("处理数据行"));
+    
+    // 将数据添加到表格模型中
+    m_tableModel->addRows(rowData.rows);
+    
+    // 显示CsvReader的性能数据
+    if (!rowData.performanceData.isEmpty()) {
+        // 将CsvReader的性能数据合并到主窗口的性能数据中
+        for (auto it = rowData.performanceData.begin(); it != rowData.performanceData.end(); ++it) {
+            m_performanceData["CsvReader-" + it.key()] = it.value();
+        }
+        updateStatusBarWithTimingInfo();
+    }
+    
+    endTiming(tr("处理数据行"));
 }
 
 void MainWindow::generateColumnCheckboxes(const QVector<QString> &headers)

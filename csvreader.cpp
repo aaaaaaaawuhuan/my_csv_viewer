@@ -51,9 +51,25 @@ CsvInitializationData CsvReader::getInitializeData(const QString &fileName)
         // 简单地以逗号分割表头，实际应用中可能需要更复杂的解析
         data.headers = headerLine.split(",");
         data.rowPositions[0] = pos; // 记录表头行位置
+        
+        // 打印表头信息用于测试
+        qDebug() << "表头位置:" << pos << "表头内容:" << headerLine;
     }
     
     // 计算总行数并记录每行位置
+    int testRowCount = 0; // 用于限制打印的测试行数
+    while (!in.atEnd() && testRowCount < 3) { // 只处理前三行数据用于测试
+        qint64 pos = file.pos(); // 记录每行起始位置
+        QString dataLine = in.readLine();
+        data.rowPositions[data.totalRows + 1] = pos; // 记录第n行位置
+        data.totalRows++;
+        testRowCount++;
+        
+        // 打印前三行数据及其位置用于测试
+        qDebug() << "数据行" << data.totalRows << "位置:" << pos << "内容:" << dataLine;
+    }
+    
+    // 继续处理剩余行但不打印
     while (!in.atEnd()) {
         qint64 pos = file.pos(); // 记录每行起始位置
         in.readLine();
@@ -77,15 +93,124 @@ CsvInitializationData CsvReader::getInitializeData(const QString &fileName)
     return data;
 }
 
+CsvRowData CsvReader::getRowsData(const QString &fileName, qint64 startRow, qint64 rowCount)
+{
+    CsvRowData data;
+    
+    startTiming(QString("读取数据行 %1-%2").arg(startRow).arg(startRow + rowCount - 1));
+    
+    // 检查是否需要重新初始化（文件是否改变）
+    if (isFileChanged(fileName) || m_initData.rowPositions.isEmpty()) {
+        m_initData = getInitializeData(fileName);
+    }
+    
+    QFile file(fileName);
+    if (!file.open(QIODevice::ReadOnly)) { // 移除Text标志以正确处理位置
+        qDebug() << "Cannot open file:" << fileName;
+        return data;
+    }
+    
+    // 检查起始行是否有效
+    if (startRow >= m_initData.totalRows || startRow < 0) {
+        qDebug() << "Invalid start row:" << startRow;
+        file.close();
+        return data;
+    }
+    
+    // 定位到起始行
+    if (m_initData.rowPositions.contains(startRow)) {
+        if (!file.seek(m_initData.rowPositions[startRow])) {
+            qDebug() << "Failed to seek to position:" << m_initData.rowPositions[startRow];
+            file.close();
+            return data;
+        }
+    } else {
+        qDebug() << "Row position not found for row:" << startRow;
+        file.close();
+        return data;
+    }
+    
+    // 读取指定数量的行
+    qint64 rowsRead = 0;
+    while (rowsRead < rowCount && !file.atEnd()) {
+        QByteArray line = file.readLine();
+        QString lineStr = QString::fromUtf8(line).trimmed(); // 简单UTF-8解码
+        // 使用更健壮的CSV解析方法
+        QStringList rowData = parseCsvLine(lineStr, m_initData.delimiter);
+        data.rows.append(rowData);
+        rowsRead++;
+    }
+    
+    file.close();
+    
+    // 复制性能数据
+    data.performanceData = m_performanceData;
+    
+    endTiming(QString("读取数据行 %1-%2").arg(startRow).arg(startRow + rowCount - 1));
+    
+    return data;
+}
+
+// 新增方法：解析单行CSV数据
+QStringList CsvReader::parseCsvLine(const QString &line, const QString &delimiter)
+{
+    QStringList result;
+    bool inQuotes = false;
+    QString currentField;
+    int delimiterLength = delimiter.length();
+    
+    for (int i = 0; i < line.length(); ++i) {
+        QChar ch = line[i];
+        
+        // 处理双引号转义
+        if (ch == '"') {
+            if (i + 1 < line.length() && line[i + 1] == '"') {
+                // 双引号表示一个引号字符
+                currentField += '"';
+                i++; // 跳过下一个引号
+            } else {
+                // 切换引号状态
+                inQuotes = !inQuotes;
+            }
+            continue;
+        }
+        
+        // 检查分隔符
+        if (!inQuotes && i + delimiterLength <= line.length()) {
+            QString substr = line.mid(i, delimiterLength);
+            if (substr == delimiter) {
+                result.append(currentField);
+                currentField.clear();
+                i += delimiterLength - 1; // 跳过分隔符（循环会自动+1）
+                continue;
+            }
+        }
+        
+        currentField += ch;
+    }
+    
+    // 添加最后一个字段
+    result.append(currentField);
+    
+    return result;
+}
+
 void CsvReader::init(const QString &fileName)
 {
     startTiming("初始化");
     m_FileName = fileName;
     // 获取初始化数据
-    CsvInitializationData data = getInitializeData(fileName);
+    m_initData = getInitializeData(fileName);
     // 发送表头数据给主窗口
-    emit initializationDataReady(data.headers);
+    emit initializationDataReady(m_initData.headers);
     endTiming("初始化");
+}
+
+bool CsvReader::isFileChanged(const QString &fileName)
+{
+    // 简单实现：检查文件名是否改变
+    // TODO: 更复杂的实现可以检查文件修改时间或校验和
+    return m_FileName != fileName;
 }
 
 void CsvReader::processFile(const QString &fileName)
@@ -93,4 +218,17 @@ void CsvReader::processFile(const QString &fileName)
     // TODO: 实现文件处理逻辑
     // 这里将添加处理CSV文件的代码
     Q_UNUSED(fileName)
+}
+
+void CsvReader::readRows(qint64 startRow, qint64 rowCount)
+{
+    if (m_FileName.isEmpty()) {
+        qDebug() << "No file opened";
+        return;
+    }
+    
+    // 获取数据行
+    CsvRowData rowData = getRowsData(m_FileName, startRow, rowCount);
+    // 发送数据给主窗口
+    emit rowDataReady(rowData, startRow);
 }
