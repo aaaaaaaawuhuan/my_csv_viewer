@@ -5,6 +5,8 @@
 #include <QScrollArea>
 #include <QWidget>
 #include <QLineEdit>
+#include <QLabel>
+#include <QDateTime>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -33,6 +35,9 @@ MainWindow::MainWindow(QWidget *parent)
     if (lineEdit) {
         connect(lineEdit, &QLineEdit::textChanged, this, &MainWindow::on_lineEdit_clowmn_name_textChanged);
     }
+    
+    // 初始化状态栏信息
+    statusBar()->showMessage(tr("就绪"));
 }
 
 MainWindow::~MainWindow()
@@ -44,15 +49,52 @@ MainWindow::~MainWindow()
     delete ui;
 }
 
+void MainWindow::startTiming(const QString &operation)
+{
+    m_timer.start();
+    // 在状态栏显示正在执行的操作
+    statusBar()->showMessage(tr("正在执行%1...").arg(operation));
+}
+
+void MainWindow::endTiming(const QString &operation)
+{
+    if (m_timer.isValid()) {
+        qint64 elapsed = m_timer.elapsed();
+        m_performanceData[operation] = elapsed;
+        // 更新状态栏显示耗时信息
+        updateStatusBarWithTimingInfo();
+    }
+}
+
+void MainWindow::updateStatusBarWithTimingInfo()
+{
+    QString message = tr("就绪");
+    if (!m_performanceData.isEmpty()) {
+        // 显示最近几次操作的耗时信息
+        QString timingInfo;
+        for (auto it = m_performanceData.begin(); it != m_performanceData.end(); ++it) {
+            if (!timingInfo.isEmpty()) timingInfo += ", ";
+            timingInfo += QString("%1: %2ms").arg(it.key()).arg(it.value());
+        }
+        message = timingInfo;
+    }
+    statusBar()->showMessage(message);
+}
+
 void MainWindow::on_action_open_triggered()
 {
+    startTiming(tr("打开文件对话框"));
     QString fileName = QFileDialog::getOpenFileName(this,tr("Open CSV File"),"",tr("CSV Files (*.csv)"));
+    endTiming(tr("打开文件对话框"));
 
     if(!fileName.isEmpty())
     {
         m_fileName = fileName;
         // 发送文件名给CsvReader进行初始化
+        startTiming(tr("文件初始化"));
         emit initCsvReader(fileName);
+        // 注意：这里不会立即结束计时，因为是异步操作
+        // 实际的计时结束会在onInitializationDataReceived中处理
     }
     else
     {
@@ -84,6 +126,13 @@ void MainWindow::on_pushButton_clear_clicked()
 
 void MainWindow::on_lineEdit_clowmn_name_textChanged(const QString &text)
 {
+    filterCheckboxes(text);
+}
+
+void MainWindow::filterCheckboxes(const QString &text)
+{
+    startTiming(tr("筛选列"));
+    
     // 根据输入的文本过滤复选框
     QScrollArea *scrollArea = ui->dockWidgetContents->findChild<QScrollArea*>("scrollArea_select");
     if (!scrollArea) return;
@@ -99,7 +148,7 @@ void MainWindow::on_lineEdit_clowmn_name_textChanged(const QString &text)
     QList<QCheckBox*> checkBoxList = contentWidget->findChildren<QCheckBox*>();
     QList<QPair<QCheckBox*, int>> checkBoxWithIndex;
     
-    // 获取所有复选框及其在布局中的索引
+    // 获取所有复选框及其在布局中的索引（排除spacer）
     for (int i = 0; i < layout->count(); ++i) {
         QLayoutItem* item = layout->itemAt(i);
         if (item) {
@@ -132,11 +181,15 @@ void MainWindow::on_lineEdit_clowmn_name_textChanged(const QString &text)
     layout->invalidate();
     contentWidget->updateGeometry();
     scrollArea->update();
+    
+    endTiming(tr("筛选列"));
 }
 
 
 void MainWindow::toggleSelectAll(bool select)
 {
+    startTiming(select ? tr("全选") : tr("清空"));
+    
     // 查找scrollArea_select控件
     QScrollArea *scrollArea = ui->dockWidgetContents->findChild<QScrollArea*>("scrollArea_select");
     if (!scrollArea) return;
@@ -152,19 +205,40 @@ void MainWindow::toggleSelectAll(bool select)
             checkBox->setChecked(select);
         }
     }
+    
+    endTiming(select ? tr("全选") : tr("清空"));
 }
 
 void MainWindow::onInitializationDataReceived(const QVector<QString> &headers)
 {
+    // 结束文件初始化计时
+    endTiming(tr("文件初始化"));
+    
+    // 显示CsvReader的性能数据
+    const QMap<QString, qint64> &csvReaderPerformanceData = m_csvReader->getPerformanceData();
+    if (!csvReaderPerformanceData.isEmpty()) {
+        // 将CsvReader的性能数据合并到主窗口的性能数据中
+        for (auto it = csvReaderPerformanceData.begin(); it != csvReaderPerformanceData.end(); ++it) {
+            m_performanceData["CsvReader-" + it.key()] = it.value();
+        }
+        updateStatusBarWithTimingInfo();
+    }
+    
+    startTiming(tr("生成筛选面板"));
+    
     // 显示dockWidget
     ui->dockWidget->show();
     
     // 根据表头生成复选框
     generateColumnCheckboxes(headers);
+    
+    endTiming(tr("生成筛选面板"));
 }
 
 void MainWindow::generateColumnCheckboxes(const QVector<QString> &headers)
 {
+    startTiming(tr("创建复选框"));
+    
     // 查找scrollArea_select控件
     QScrollArea *scrollArea = ui->dockWidgetContents->findChild<QScrollArea*>("scrollArea_select");
     if (!scrollArea) return;
@@ -198,4 +272,6 @@ void MainWindow::generateColumnCheckboxes(const QVector<QString> &headers)
         // 插入到布局中倒数第二个位置（在spacer之前）
         layout->insertWidget(layout->count() - 1, checkBox);
     }
+    
+    endTiming(tr("创建复选框"));
 }

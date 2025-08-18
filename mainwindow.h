@@ -9,6 +9,8 @@
 #include <QString>
 #include <QThread>
 #include <QVector>
+#include <QElapsedTimer>
+#include <QMap>
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -40,9 +42,14 @@ private:
     QString m_fileName;
     CsvReader *m_csvReader;
     QThread *m_workerThread;
+    QElapsedTimer m_timer;  // 用于计时的计时器
+    QMap<QString, qint64> m_performanceData;  // 存储性能数据
     void generateColumnCheckboxes(const QVector<QString> &headers);
     void toggleSelectAll(bool select);
     void filterCheckboxes(const QString &text);
+    void startTiming(const QString &operation);
+    void endTiming(const QString &operation);
+    void updateStatusBarWithTimingInfo();
 };
 
 #endif // MAINWINDOW_H

@@ -10,10 +10,31 @@ CsvReader::CsvReader(QObject *parent)
 
 }
 
+void CsvReader::startTiming(const QString &operation)
+{
+    m_timer.start();
+    m_performanceData[operation] = 0; // 初始化
+}
+
+void CsvReader::endTiming(const QString &operation)
+{
+    if (m_timer.isValid()) {
+        qint64 elapsed = m_timer.elapsed();
+        m_performanceData[operation] = elapsed;
+    }
+}
+
+const QMap<QString, qint64>& CsvReader::getPerformanceData() const
+{
+    return m_performanceData;
+}
+
 CsvInitializationData CsvReader::getInitializeData(const QString &fileName)
 {
     CsvInitializationData data;
     data.totalRows = 0;
+    
+    startTiming("读取文件");
     
     QFile file(fileName);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
@@ -48,16 +69,23 @@ CsvInitializationData CsvReader::getInitializeData(const QString &fileName)
     // 默认分隔符为逗号
     data.delimiter = ",";
     
+    // 复制性能数据
+    data.performanceData = m_performanceData;
+    
+    endTiming("读取文件");
+    
     return data;
 }
 
 void CsvReader::init(const QString &fileName)
 {
+    startTiming("初始化");
     m_FileName = fileName;
     // 获取初始化数据
     CsvInitializationData data = getInitializeData(fileName);
     // 发送表头数据给主窗口
     emit initializationDataReady(data.headers);
+    endTiming("初始化");
 }
 
 void CsvReader::processFile(const QString &fileName)
