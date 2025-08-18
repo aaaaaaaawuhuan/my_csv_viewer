@@ -1,13 +1,18 @@
-
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
 #include <QMainWindow>
-
-
+#include <QFileDialog>
+#include <QMessageBox>
+#include <QDebug>
+#include <QCheckBox>
+#include <QString>
+#include <QThread>
+#include <QVector>
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
+class CsvReader;
 QT_END_NAMESPACE
 
 class MainWindow : public QMainWindow
@@ -19,8 +24,25 @@ public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
+signals:
+    void initCsvReader(const QString &fileName);
+
+private slots:
+    void on_action_open_triggered();
+    void on_action_show_select_triggered();
+    void on_pushButton_all_clicked();
+    void on_pushButton_clear_clicked();
+    void on_lineEdit_clowmn_name_textChanged(const QString &text);
+    void onInitializationDataReceived(const QVector<QString> &headers);
+
 private:
     Ui::MainWindow *ui;
+    QString m_fileName;
+    CsvReader *m_csvReader;
+    QThread *m_workerThread;
+    void generateColumnCheckboxes(const QVector<QString> &headers);
+    void toggleSelectAll(bool select);
+    void filterCheckboxes(const QString &text);
 };
 
 #endif // MAINWINDOW_H
