@@ -6,8 +6,19 @@
 CsvReader::CsvReader(QObject *parent)
     : QObject{parent}
     , m_FileName("")
+    , m_encoding(Encoding::AutoDetect) // 默认自动检测编码
 {
 
+}
+
+void CsvReader::setEncoding(Encoding encoding)
+{
+    m_encoding = encoding;
+}
+
+Encoding CsvReader::getEncoding() const
+{
+    return m_encoding;
 }
 
 void CsvReader::startTiming(const QString &operation)
@@ -29,6 +40,89 @@ const QMap<QString, qint64>& CsvReader::getPerformanceData() const
     return m_performanceData;
 }
 
+Encoding CsvReader::detectEncoding(const QByteArray& data) const
+{
+    // 检查是否是UTF-8 BOM
+    if (data.startsWith(QByteArray("\xEF\xBB\xBF", 3))) {
+        qDebug() << "检测到编码: UTF-8 (带BOM)";
+        return Encoding::UTF8;
+    }
+    
+    // 尝试验证是否为有效的UTF-8
+    bool isValidUtf8 = true;
+    int i = 0;
+    while (i < data.size()) {
+        uchar byte = static_cast<uchar>(data[i]);
+        
+        // 单字节字符 (0xxxxxxx)
+        if ((byte & 0x80) == 0) {
+            i++;
+            continue;
+        }
+        
+        // 多字节字符
+        int followingBytes = 0;
+        if ((byte & 0xE0) == 0xC0) {  // 110xxxxx
+            followingBytes = 1;
+        } else if ((byte & 0xF0) == 0xE0) {  // 1110xxxx
+            followingBytes = 2;
+        } else if ((byte & 0xF8) == 0xF0) {  // 11110xxx
+            followingBytes = 3;
+        } else {
+            isValidUtf8 = false;
+            break;
+        }
+        
+        // 检查后续字节是否符合 10xxxxxx 格式
+        for (int j = 1; j <= followingBytes; j++) {
+            if (i + j >= data.size() || (static_cast<uchar>(data[i + j]) & 0xC0) != 0x80) {
+                isValidUtf8 = false;
+                break;
+            }
+        }
+        
+        if (!isValidUtf8) {
+            break;
+        }
+        
+        i += followingBytes + 1;
+    }
+    
+    if (isValidUtf8) {
+        qDebug() << "检测到编码: UTF-8";
+        return Encoding::UTF8;
+    } else {
+        qDebug() << "检测到编码: GBK (或本地编码)";
+        return Encoding::GBK;
+    }
+}
+
+QString CsvReader::decodeData(const QByteArray& data) const
+{
+    // 处理UTF-8 BOM
+    QByteArray rawData = data;
+    if (rawData.size() >= 3 && rawData.startsWith(QByteArray("\xEF\xBB\xBF", 3))) {
+        rawData = rawData.mid(3); // 移除BOM
+    }
+    
+    // 如果是自动检测模式，先检测编码
+    Encoding encoding = m_encoding;
+    if (encoding == Encoding::AutoDetect) {
+        encoding = detectEncoding(rawData);
+    }
+    
+    switch (encoding) {
+    case Encoding::UTF8:
+        return QString::fromUtf8(rawData);
+    case Encoding::GBK:
+        return QString::fromLocal8Bit(rawData);
+    case Encoding::ASCII:
+        return QString::fromLatin1(rawData);
+    default:
+        return QString::fromUtf8(rawData);
+    }
+}
+
 CsvInitializationData CsvReader::getInitializeData(const QString &fileName)
 {
     CsvInitializationData data;
@@ -37,42 +131,53 @@ CsvInitializationData CsvReader::getInitializeData(const QString &fileName)
     startTiming("读取文件");
     
     QFile file(fileName);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    if (!file.open(QIODevice::ReadOnly)) { // 移除Text标志以正确处理位置
         qDebug() << "Cannot open file:" << fileName;
         return data;
     }
     
-    QTextStream in(&file);
+    // 读取文件开头部分用于编码检测
+    QByteArray sampleData = file.read(qMin(file.size(), static_cast<qint64>(1024 * 1024))); // 读取前1MB或整个文件
+    Encoding detectedEncoding = (m_encoding == Encoding::AutoDetect) ? detectEncoding(sampleData) : m_encoding;
+    
+    // 重新打开文件以确保从头开始读取
+    file.close();
+    if (!file.open(QIODevice::ReadOnly)) {
+        qDebug() << "Cannot reopen file:" << fileName;
+        return data;
+    }
     
     // 读取表头
-    if (!in.atEnd()) {
+    if (!file.atEnd()) {
         qint64 pos = file.pos(); // 记录表头位置
-        QString headerLine = in.readLine();
-        // 简单地以逗号分割表头，实际应用中可能需要更复杂的解析
-        data.headers = headerLine.split(",");
+        QByteArray headerLine = file.readLine(); // 使用readLine而不是QTextStream
+        // 解码并分割表头
+        QString decodedHeader = decodeData(headerLine).trimmed();
+        data.headers = parseCsvLine(decodedHeader, ",");
         data.rowPositions[0] = pos; // 记录表头行位置
         
         // 打印表头信息用于测试
-        qDebug() << "表头位置:" << pos << "表头内容:" << headerLine;
+        qDebug() << "表头位置:" << pos << "表头内容:" << decodedHeader;
     }
     
     // 计算总行数并记录每行位置
     int testRowCount = 0; // 用于限制打印的测试行数
-    while (!in.atEnd() && testRowCount < 3) { // 只处理前三行数据用于测试
+    while (!file.atEnd() && testRowCount < 3) { // 只处理前三行数据用于测试
         qint64 pos = file.pos(); // 记录每行起始位置
-        QString dataLine = in.readLine();
+        QByteArray dataLine = file.readLine();
         data.rowPositions[data.totalRows + 1] = pos; // 记录第n行位置
         data.totalRows++;
         testRowCount++;
         
         // 打印前三行数据及其位置用于测试
-        qDebug() << "数据行" << data.totalRows << "位置:" << pos << "内容:" << dataLine;
+        QString decodedLine = decodeData(dataLine).trimmed();
+        qDebug() << "数据行" << data.totalRows << "位置:" << pos << "内容:" << decodedLine;
     }
     
     // 继续处理剩余行但不打印
-    while (!in.atEnd()) {
+    while (!file.atEnd()) {
         qint64 pos = file.pos(); // 记录每行起始位置
-        in.readLine();
+        file.readLine();
         data.rowPositions[data.totalRows + 1] = pos; // 记录第n行位置
         data.totalRows++;
     }
@@ -134,7 +239,7 @@ CsvRowData CsvReader::getRowsData(const QString &fileName, qint64 startRow, qint
     qint64 rowsRead = 0;
     while (rowsRead < rowCount && !file.atEnd()) {
         QByteArray line = file.readLine();
-        QString lineStr = QString::fromUtf8(line).trimmed(); // 简单UTF-8解码
+        QString lineStr = decodeData(line).trimmed();
         // 使用更健壮的CSV解析方法
         QStringList rowData = parseCsvLine(lineStr, m_initData.delimiter);
         data.rows.append(rowData);
