@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "./ui_mainwindow.h"
 #include "csvreader.h"
+#include "tablemodel.h"  // 添加包含
 #include <QVBoxLayout>
 #include <QScrollArea>
 #include <QWidget>
@@ -13,9 +14,13 @@ MainWindow::MainWindow(QWidget *parent)
     , ui(new Ui::MainWindow)
     , m_fileName("")
     , m_csvReader(new CsvReader)
+    , m_tableModel(new TableModel(this))  // 初始化数据模型
     , m_workerThread(new QThread)
 {
     ui->setupUi(this);
+    
+    // 将数据模型设置到tableView中
+    ui->tableView->setModel(m_tableModel);
 
     // 将CsvReader移动到工作线程
     m_csvReader->moveToThread(m_workerThread);
@@ -268,6 +273,9 @@ void MainWindow::onInitializationDataReceived(const QVector<QString> &headers)
     
     // 根据表头生成复选框
     generateColumnCheckboxes(headers);
+    
+    // 设置表格模型的表头
+    m_tableModel->setHeaders(headers);
     
     endTiming(tr("生成筛选面板"));
 }

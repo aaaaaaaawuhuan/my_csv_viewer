@@ -15,6 +15,7 @@
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 class CsvReader;
+class TableModel;
 QT_END_NAMESPACE
 
 class MainWindow : public QMainWindow
@@ -42,6 +43,7 @@ private:
     Ui::MainWindow *ui;
     QString m_fileName;
     CsvReader *m_csvReader;
+    TableModel *m_tableModel;  // 添加数据模型
     QThread *m_workerThread;
     QElapsedTimer m_timer;  // 用于计时的计时器
     QMap<QString, qint64> m_performanceData;  // 存储性能数据

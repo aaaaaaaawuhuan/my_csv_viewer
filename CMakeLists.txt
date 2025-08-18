@@ -18,6 +18,8 @@ set(PROJECT_SOURCES
         mainwindow.h
         mainwindow.ui
         csvreader.h
+        tablemodel.cpp
+        tablemodel.h
         csvreader.cpp
 )
 
