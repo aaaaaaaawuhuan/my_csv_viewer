@@ -44,7 +44,6 @@ Encoding CsvReader::detectEncoding(const QByteArray& data) const
 {
     // 检查是否是UTF-8 BOM
     if (data.startsWith(QByteArray("\xEF\xBB\xBF", 3))) {
-        qDebug() << "检测到编码: UTF-8 (带BOM)";
         return Encoding::UTF8;
     }
     
@@ -89,10 +88,8 @@ Encoding CsvReader::detectEncoding(const QByteArray& data) const
     }
     
     if (isValidUtf8) {
-        qDebug() << "检测到编码: UTF-8";
         return Encoding::UTF8;
     } else {
-        qDebug() << "检测到编码: GBK (或本地编码)";
         return Encoding::GBK;
     }
 }
@@ -336,4 +333,9 @@ void CsvReader::readRows(qint64 startRow, qint64 rowCount)
     CsvRowData rowData = getRowsData(m_FileName, startRow, rowCount);
     // 发送数据给主窗口
     emit rowDataReady(rowData, startRow);
+}
+
+qint64 CsvReader::getTotalRows() const
+{
+    return m_initData.totalRows;
 }

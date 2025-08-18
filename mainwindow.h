@@ -11,6 +11,7 @@
 #include <QVector>
 #include <QElapsedTimer>
 #include <QMap>
+#include <QTimer>
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -41,6 +42,8 @@ private slots:
     void on_lineEdit_clowmn_name_textChanged(const QString &text);
     void onInitializationDataReceived(const QVector<QString> &headers);
     void onRowsDataReceived(const struct CsvRowData &rowData, qint64 startRow); // 修改参数类型以匹配信号
+    void onVerticalScrollBarValueChanged(int value); // 添加滚动条值变化槽函数
+    void onDelayedLoad(); // 添加延迟加载槽函数
 
 private:
     Ui::MainWindow *ui;
@@ -51,12 +54,17 @@ private:
     QThread *m_workerThread;
     QElapsedTimer m_timer;  // 用于计时的计时器
     QMap<QString, qint64> m_performanceData;  // 存储性能数据
+    QTimer *m_delayedLoadTimer; // 延迟加载定时器
+    qint64 m_totalRows; // 文件总行数
+    qint64 m_visibleRows; // 可视行数
+    qint64 m_currentStartRow; // 当前显示的数据起始行
     void generateColumnCheckboxes(const QVector<QString> &headers);
     void toggleSelectAll(bool select);
     void filterCheckboxes(const QString &text);
     void startTiming(const QString &operation);
     void endTiming(const QString &operation);
     void updateStatusBarWithTimingInfo();
+    void updateScrollBarRange(); // 更新滚动条范围
 };
 
 #endif // MAINWINDOW_H

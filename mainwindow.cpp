@@ -8,6 +8,8 @@
 #include <QLineEdit>
 #include <QLabel>
 #include <QDateTime>
+#include <QScrollBar>
+#include <QTimer>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -16,11 +18,18 @@ MainWindow::MainWindow(QWidget *parent)
     , m_csvReader(new CsvReader)
     , m_tableModel(new TableModel(this))  // 初始化数据模型
     , m_workerThread(new QThread)
+    , m_delayedLoadTimer(new QTimer(this))
+    , m_totalRows(0)
+    , m_visibleRows(100) // 默认显示100行
+    , m_currentStartRow(0) // 初始化当前起始行
 {
     ui->setupUi(this);
     
     // 将数据模型设置到tableView中
     ui->tableView->setModel(m_tableModel);
+    
+    // 禁用QTableView自带的垂直滚动条
+    ui->tableView->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
     // 将CsvReader移动到工作线程
     m_csvReader->moveToThread(m_workerThread);
@@ -33,6 +42,16 @@ MainWindow::MainWindow(QWidget *parent)
             this, &MainWindow::onInitializationDataReceived);
     connect(m_csvReader, &CsvReader::rowDataReady, 
             this, &MainWindow::onRowsDataReceived); // 连接数据行读取完成的信号和槽
+
+    // 连接滚动条信号和槽
+    connect(ui->verticalScrollBar, &QScrollBar::valueChanged,
+            this, &MainWindow::onVerticalScrollBarValueChanged);
+    // 保存当前起始行为初始值
+    m_currentStartRow = ui->verticalScrollBar->value();
+    
+    // 设置延迟加载定时器
+    m_delayedLoadTimer->setSingleShot(true);
+    connect(m_delayedLoadTimer, &QTimer::timeout, this, &MainWindow::onDelayedLoad);
 
     //init
     ui->dockWidget->hide();
@@ -169,11 +188,15 @@ void MainWindow::on_pushButton_filter_clicked()
     m_tableModel->setHeaders(m_headers);
     
     // 请求读取数据行（这里我们先读取前100行作为示例）
-    emit requestRowsData(1, 100); // 从第1行开始读取100行（跳过表头）
+    emit requestRowsData(1, m_visibleRows); // 从第1行开始读取可视行数（跳过表头）
     
     endTiming(tr("筛选显示"));
 }
 
+void MainWindow::on_lineEdit_clowmn_name_textChanged(const QString &text)
+{
+    filterCheckboxes(text);
+}
 
 void MainWindow::filterCheckboxes(const QString &text)
 {
@@ -255,11 +278,12 @@ void MainWindow::toggleSelectAll(bool select)
     endTiming(select ? tr("全选") : tr("清空"));
 }
 
-
 void MainWindow::onInitializationDataReceived(const QVector<QString> &headers)
 {
     // 结束文件初始化计时
     endTiming(tr("文件初始化"));
+    
+    qDebug() << "初始化数据接收: 表头数量=" << headers.size() << ", 总行数=" << m_csvReader->getTotalRows();
     
     // 显示CsvReader的性能数据
     const QMap<QString, qint64> &csvReaderPerformanceData = m_csvReader->getPerformanceData();
@@ -285,42 +309,24 @@ void MainWindow::onInitializationDataReceived(const QVector<QString> &headers)
     // 设置表格模型的表头
     m_tableModel->setHeaders(headers);
     
+    // 保存总行数（从CsvReader获取）
+    m_totalRows = m_csvReader->getTotalRows();
+    
+    qDebug() << "总行数设置为:" << m_totalRows;
+    
+    // 更新滚动条范围
+    updateScrollBarRange();
+    
+    // 初始化TableView的滚动条
+    QScrollBar* tableViewScrollBar = ui->tableView->verticalScrollBar();
+    if (tableViewScrollBar) {
+        tableViewScrollBar->setRange(0, m_totalRows - m_visibleRows);
+        tableViewScrollBar->setPageStep(m_visibleRows);
+        qDebug() << "初始化TableView滚动条: 范围0-" << (m_totalRows - m_visibleRows) << ", 步长=" << m_visibleRows;
+    }
+    
     endTiming(tr("生成筛选面板"));
 }
-
-void MainWindow::on_lineEdit_clowmn_name_textChanged(const QString &text)
-{
-    // 根据输入的文本过滤复选框
-    QScrollArea *scrollArea = ui->dockWidgetContents->findChild<QScrollArea*>("scrollArea_select");
-    if (!scrollArea) return;
-    
-    QWidget *contentWidget = scrollArea->widget();
-    if (!contentWidget) return;
-
-    QVBoxLayout* layout = qobject_cast<QVBoxLayout*>(contentWidget->layout());
-    if (!layout) return;
-
-    // 遍历所有复选框
-    QList<QCheckBox*> checkBoxList = contentWidget->findChildren<QCheckBox*>();
-    for (QCheckBox *checkBox : checkBoxList) {
-        // 根据输入文本决定是否显示复选框
-        if (text.isEmpty() || text == "输入列名") {
-            // 如果输入框为空或为默认文本，显示所有复选框
-            checkBox->setVisible(true);
-        } else {
-            // 根据文本过滤复选框
-            if (checkBox->text().contains(text, Qt::CaseInsensitive)) {
-                checkBox->setVisible(true);
-            } else {
-                checkBox->setVisible(false);
-            }
-        }
-    }
-
-    // 重新调整布局以确保可见复选框紧密排列
-    layout->invalidate();
-}
-
 
 void MainWindow::onRowsDataReceived(const struct CsvRowData &rowData, qint64 startRow)
 {
@@ -328,8 +334,35 @@ void MainWindow::onRowsDataReceived(const struct CsvRowData &rowData, qint64 sta
     
     startTiming(tr("处理数据行"));
     
-    // 将数据添加到表格模型中
-    m_tableModel->addRows(rowData.rows);
+    qDebug() << "接收到数据行: startRow=" << startRow << ", 数据行数=" << rowData.rows.size();
+    
+    // 使用数据窗口方式更新表格模型中的数据
+    m_tableModel->setDataWindow(rowData.rows, startRow);
+    
+    // 打印模型中的数据信息
+    qDebug() << "模型更新后行数=" << m_tableModel->rowCount();
+    if (m_tableModel->rowCount() > 0) {
+        QModelIndex firstIndex = m_tableModel->index(0, 0);
+        QVariant firstData = m_tableModel->data(firstIndex, Qt::DisplayRole);
+        qDebug() << "第一行第一列数据=" << firstData.toString();
+    }
+    
+    // 强制刷新视图
+    ui->tableView->viewport()->update();
+    
+    // 直接滚动到顶部以确保显示正确位置的数据
+    if (rowData.rows.size() > 0) {
+        QModelIndex firstIndex = m_tableModel->index(0, 0);
+        ui->tableView->scrollTo(firstIndex, QAbstractItemView::PositionAtTop);
+        qDebug() << "已滚动到第一行数据";
+    }
+    
+    // 更新状态栏显示当前数据位置
+    QString positionInfo = QString("显示行 %1-%2 (共%3行)")
+        .arg(startRow + 1)
+        .arg(startRow + rowData.rows.size())
+        .arg(m_totalRows);
+    statusBar()->showMessage(positionInfo);
     
     // 显示CsvReader的性能数据
     if (!rowData.performanceData.isEmpty()) {
@@ -382,4 +415,39 @@ void MainWindow::generateColumnCheckboxes(const QVector<QString> &headers)
     }
     
     endTiming(tr("创建复选框"));
+}
+
+void MainWindow::onVerticalScrollBarValueChanged(int value)
+{
+    qDebug() << "滚动条值变化: value=" << value << ", 当前起始行=" << m_currentStartRow;
+    
+    // 当滚动条值变化时，启动延迟加载定时器
+    m_delayedLoadTimer->start(200); // 200ms延迟
+    Q_UNUSED(value);
+}
+
+void MainWindow::onDelayedLoad()
+{
+    // 延迟加载数据
+    int currentValue = ui->verticalScrollBar->value();
+    
+    qDebug() << "延迟加载触发: currentValue=" << currentValue << ", m_currentStartRow=" << m_currentStartRow;
+    
+    // 检查是否需要加载新数据
+    if (currentValue != m_currentStartRow) {
+        m_currentStartRow = currentValue;
+        qDebug() << "请求数据: 起始行=" << m_currentStartRow + 1 << ", 行数=" << m_visibleRows;
+        // 请求读取数据行，从当前滚动位置开始
+        emit requestRowsData(m_currentStartRow + 1, m_visibleRows); // +1是因为跳过表头
+    } else {
+        qDebug() << "无需加载新数据，起始行未变化";
+    }
+}
+
+void MainWindow::updateScrollBarRange()
+{
+    // 更新滚动条范围
+    ui->verticalScrollBar->setRange(0, m_totalRows - m_visibleRows);
+    ui->verticalScrollBar->setPageStep(m_visibleRows);
+    qDebug() << "更新滚动条范围: 0-" << (m_totalRows - m_visibleRows) << ", 步长=" << m_visibleRows;
 }

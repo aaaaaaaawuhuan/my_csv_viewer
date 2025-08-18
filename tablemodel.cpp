@@ -1,7 +1,9 @@
 #include "tablemodel.h"
+#include <QDebug>
 
 TableModel::TableModel(QObject *parent)
     : QAbstractTableModel(parent)
+    , m_currentWindowStartRow(0)
 {
 }
 
@@ -44,6 +46,9 @@ QVariant TableModel::headerData(int section, Qt::Orientation orientation, int ro
     if (role == Qt::DisplayRole) {
         if (orientation == Qt::Horizontal && section < m_headers.size()) {
             return m_headers.at(section);
+        } else if (orientation == Qt::Vertical) {
+            // 显示实际的行号，而不是相对行号
+            return QString::number(m_currentWindowStartRow + section + 1);
         }
     }
     
@@ -83,5 +88,23 @@ void TableModel::clear()
     beginResetModel();
     m_headers.clear();
     m_data.clear();
+    m_currentWindowStartRow = 0;
     endResetModel();
+}
+
+void TableModel::setDataWindow(const QVector<QStringList> &data, qint64 startRow)
+{
+    qDebug() << "设置数据窗口: 数据行数=" << data.size() << ", 起始行=" << startRow;
+    
+    beginResetModel();
+    m_data = data;
+    m_currentWindowStartRow = startRow;
+    endResetModel();
+    
+    qDebug() << "数据窗口设置完成: 当前行数=" << m_data.size() << ", 起始行=" << m_currentWindowStartRow;
+}
+
+qint64 TableModel::getCurrentWindowStartRow() const
+{
+    return m_currentWindowStartRow;
 }

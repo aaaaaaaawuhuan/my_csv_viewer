@@ -40,6 +40,7 @@ public:
     const QMap<QString, qint64>& getPerformanceData() const; // 添加获取性能数据的公共方法
     void setEncoding(Encoding encoding); // 设置编码
     Encoding getEncoding() const; // 获取当前编码
+    qint64 getTotalRows() const; // 获取总行数
 
 private:
     QString m_FileName;

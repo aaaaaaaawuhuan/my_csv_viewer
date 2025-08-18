@@ -22,9 +22,20 @@
       </property>
       <layout class="QGridLayout" name="gridLayout_2">
        <item row="0" column="0">
-        <widget class="QTableView" name="tableView"/>
+        <widget class="QTableView" name="tableView">
+         <property name="verticalScrollBarPolicy">
+          <enum>Qt::ScrollBarAlwaysOff</enum>
+         </property>
+        </widget>
        </item>
       </layout>
+     </widget>
+    </item>
+    <item>
+     <widget class="QScrollBar" name="verticalScrollBar">
+      <property name="orientation">
+       <enum>Qt::Vertical</enum>
+      </property>
      </widget>
     </item>
    </layout>
