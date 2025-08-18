@@ -34,6 +34,7 @@ private slots:
     void on_action_show_select_triggered();
     void on_pushButton_all_clicked();
     void on_pushButton_clear_clicked();
+    void on_pushButton_filter_clicked();
     void on_lineEdit_clowmn_name_textChanged(const QString &text);
     void onInitializationDataReceived(const QVector<QString> &headers);
 

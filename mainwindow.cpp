@@ -124,6 +124,43 @@ void MainWindow::on_pushButton_clear_clicked()
     toggleSelectAll(false);
 }
 
+void MainWindow::on_pushButton_filter_clicked()
+{
+    startTiming(tr("筛选显示"));
+    
+    // 获取选中的列
+    QScrollArea *scrollArea = ui->dockWidgetContents->findChild<QScrollArea*>("scrollArea_select");
+    if (!scrollArea) return;
+    
+    QWidget *contentWidget = scrollArea->widget();
+    if (!contentWidget) return;
+    
+    // 获取所有选中的复选框
+    QList<QCheckBox*> checkBoxList = contentWidget->findChildren<QCheckBox*>();
+    QVector<QString> selectedColumns;
+    for (QCheckBox *checkBox : checkBoxList) {
+        if (checkBox->isChecked()) {
+            selectedColumns.append(checkBox->text());
+        }
+    }
+    
+    // 检查是否有选中的列
+    if (selectedColumns.isEmpty()) {
+        QMessageBox::warning(this, tr("警告"), tr("请至少选择一列进行显示"));
+        endTiming(tr("筛选显示"));
+        return;
+    }
+    
+    // 显示表格视图
+    ui->tableView->show();
+    
+    // TODO: 这里将添加实际的文件读取、解析和显示逻辑
+    // 目前只是显示一个消息表示功能已触发
+    statusBar()->showMessage(tr("筛选显示功能已触发，选中了%1列").arg(selectedColumns.size()), 3000);
+    
+    endTiming(tr("筛选显示"));
+}
+
 void MainWindow::on_lineEdit_clowmn_name_textChanged(const QString &text)
 {
     filterCheckboxes(text);
