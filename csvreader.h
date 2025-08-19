@@ -14,6 +14,7 @@ enum class Encoding {
     ASCII,
     AutoDetect
 };
+// Q_ENUM(Encoding) 移至 CsvReader 类内部
 
 struct CsvInitializationData {
     QVector<QString> headers;
@@ -34,6 +35,7 @@ class CsvReader : public QObject
     Q_OBJECT
 public:
     explicit CsvReader(QObject *parent = nullptr);
+    Q_ENUM(Encoding)
     
     CsvInitializationData getInitializeData(const QString &fileName);
     CsvRowData getRowsData(const QString &fileName, qint64 startRow, qint64 rowCount); // 添加读取数据行的方法
@@ -64,7 +66,10 @@ public slots:
     void processFile(const QString &fileName);
     void readRows(qint64 startRow, qint64 rowCount); // 添加读取数据行的槽函数
 
-private slots:
 };
+
+Q_DECLARE_METATYPE(CsvInitializationData)
+Q_DECLARE_METATYPE(CsvRowData)
+Q_DECLARE_METATYPE(Encoding)
 
 #endif // CSVREADER_H
