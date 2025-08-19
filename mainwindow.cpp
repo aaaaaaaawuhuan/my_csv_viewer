@@ -338,7 +338,8 @@ void MainWindow::onRowsDataReceived(const struct CsvRowData &rowData, qint64 sta
     
     // 使用数据窗口方式更新表格模型中的数据
     m_tableModel->setDataWindow(rowData.rows, startRow);
-    
+
+#ifdef DEBUG_PRINT
     // 打印模型中的数据信息
     qDebug() << "模型更新后行数=" << m_tableModel->rowCount();
     if (m_tableModel->rowCount() > 0) {
@@ -346,7 +347,7 @@ void MainWindow::onRowsDataReceived(const struct CsvRowData &rowData, qint64 sta
         QVariant firstData = m_tableModel->data(firstIndex, Qt::DisplayRole);
         qDebug() << "第一行第一列数据=" << firstData.toString();
     }
-    
+#endif
     // 强制刷新视图
     ui->tableView->viewport()->update();
     

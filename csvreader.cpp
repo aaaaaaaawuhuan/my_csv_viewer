@@ -152,11 +152,9 @@ CsvInitializationData CsvReader::getInitializeData(const QString &fileName)
         QString decodedHeader = decodeData(headerLine).trimmed();
         data.headers = parseCsvLine(decodedHeader, ",");
         data.rowPositions[0] = pos; // 记录表头行位置
-        
-        // 打印表头信息用于测试
-        qDebug() << "表头位置:" << pos << "表头内容:" << decodedHeader;
     }
     
+#ifdef DEBUG_PRINT
     // 计算总行数并记录每行位置
     int testRowCount = 0; // 用于限制打印的测试行数
     while (!file.atEnd() && testRowCount < 3) { // 只处理前三行数据用于测试
@@ -170,6 +168,7 @@ CsvInitializationData CsvReader::getInitializeData(const QString &fileName)
         QString decodedLine = decodeData(dataLine).trimmed();
         qDebug() << "数据行" << data.totalRows << "位置:" << pos << "内容:" << decodedLine;
     }
+#endif
     
     // 继续处理剩余行但不打印
     while (!file.atEnd()) {
