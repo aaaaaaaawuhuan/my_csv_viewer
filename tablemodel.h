@@ -32,6 +32,13 @@ public:
     qint64 getFullDataStartRow() const; // 获取完整数据的起始行号
     int getFullDataSize() const; // 获取完整数据的大小
     void clearDataOnly(); // 只清空数据，不清空表头
+    
+    // 预加载数据整合方法
+    void prependPreloadedData(const QVector<QStringList> &data); // 在前面添加预加载数据
+    void appendPreloadedData(const QVector<QStringList> &data);  // 在后面添加预加载数据
+    bool canPrependData(qint64 requestedStartRow) const; // 检查是否可以向前预加载
+    bool canAppendData(qint64 requestedEndRow) const;   // 检查是否可以向后预加载
+    void maintainTripleWindowSize(); // 维持三倍窗口大小
 
 private:
     QVector<QString> m_headers;  // 表头数据

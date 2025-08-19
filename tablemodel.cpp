@@ -55,7 +55,7 @@ QVariant TableModel::headerData(int section, Qt::Orientation orientation, int ro
             return m_headers.at(section);
         } else if (orientation == Qt::Vertical) {
             // 显示实际的行号
-            return QString::number(m_fullDataStartRow + m_visibleStartRow + section + 1);
+            return QString::number(m_fullDataStartRow + m_visibleStartRow + section);
         }
     }
     
@@ -98,6 +98,7 @@ void TableModel::clear()
     endResetModel();
 }
 
+// 待修改
 void TableModel::setDataWindow(const QVector<QStringList> &data, qint64 startRow)
 {
     qDebug() << "设置数据窗口: 数据行数=" << data.size() << ", 起始行=" << startRow;
@@ -119,7 +120,7 @@ qint64 TableModel::getCurrentWindowStartRow() const
     return m_fullDataStartRow + m_visibleStartRow;
 }
 
-// 双倍窗口新增方法的实现
+// 得到请求的可视窗口数据后初始化模型数据
 void TableModel::setFullData(const QVector<QStringList> &data, qint64 startRow)
 {
     qDebug() << "设置完整数据: 数据行数=" << data.size() << ", 起始行=" << startRow;
@@ -128,12 +129,7 @@ void TableModel::setFullData(const QVector<QStringList> &data, qint64 startRow)
     m_fullData = data;
     m_fullDataStartRow = startRow;
     m_visibleStartRow = 0;
-    // 假设传入的data大小就是3倍的可视行数
-    if (data.size() >= 3) {
-        m_visibleRows = data.size() / 3;
-    } else {
-        m_visibleRows = data.size();
-    }
+    m_visibleRows = data.size();
     endResetModel();
     
     qDebug() << "完整数据设置完成: 完整数据行数=" << m_fullData.size() 
@@ -175,4 +171,74 @@ void TableModel::clearDataOnly()
     m_visibleStartRow = 0;
     m_visibleRows = 0;
     endResetModel();
+}
+
+// 预加载数据整合方法的实现
+void TableModel::prependPreloadedData(const QVector<QStringList> &data)
+{
+    if (data.isEmpty()) return;
+    
+    qDebug() << "向前预加载数据: 数据行数=" << data.size();
+    
+    // 将新数据添加到前面
+    for (int i = data.size() - 1; i >= 0; --i) {
+        m_fullData.prepend(data[i]);
+    }
+    
+    // 更新起始行号
+    m_fullDataStartRow -= data.size();
+    
+    // 维持三倍窗口大小
+    maintainTripleWindowSize();
+    
+    qDebug() << "向前预加载完成: 完整数据行数=" << m_fullData.size() 
+             << ", 起始行=" << m_fullDataStartRow;
+}
+
+void TableModel::appendPreloadedData(const QVector<QStringList> &data)
+{
+    if (data.isEmpty()) return;
+    
+    qDebug() << "向后预加载数据: 数据行数=" << data.size();
+    
+    // 将新数据添加到后面
+    for (const QStringList& row : data) {
+        m_fullData.append(row);
+    }
+    
+    // 维持三倍窗口大小
+    maintainTripleWindowSize();
+    
+    qDebug() << "向后预加载完成: 完整数据行数=" << m_fullData.size() 
+             << ", 起始行=" << m_fullDataStartRow;
+}
+
+bool TableModel::canPrependData(qint64 requestedStartRow) const
+{
+    // 检查是否可以向前预加载（即起始行号是否可以更小）
+    return requestedStartRow < m_fullDataStartRow;
+}
+
+bool TableModel::canAppendData(qint64 requestedEndRow) const
+{
+    // 检查是否可以向后预加载（即结束行号是否可以更大）
+    return (m_fullDataStartRow + m_fullData.size() - 1) < requestedEndRow;
+}
+
+void TableModel::maintainTripleWindowSize()
+{
+    // 确保数据窗口大小维持在三倍于可视行数
+    if (m_visibleRows <= 0) return;
+    
+    int targetSize = m_visibleRows * 3;
+    if (m_fullData.size() > targetSize) {
+        // 如果数据过多，需要裁剪
+        int excess = m_fullData.size() - targetSize;
+        // 优先保持当前可视窗口的数据，裁剪两端的数据
+        // 这里简化处理，直接从前面裁剪
+        for (int i = 0; i < excess; ++i) {
+            m_fullData.removeFirst();
+            m_fullDataStartRow++;
+        }
+    }
 }

@@ -19,6 +19,7 @@ MainWindow::MainWindow(QWidget *parent)
     , m_tableModel(new TableModel(this))  // 初始化数据模型
     , m_workerThread(new QThread)
     , m_delayedLoadTimer(new QTimer(this))
+    , m_preloadTimer(new QTimer(this))
     , m_totalRows(0)
     , m_visibleRows(100) // 默认显示100行
     , m_currentStartRow(0) // 初始化当前起始行
@@ -59,6 +60,10 @@ MainWindow::MainWindow(QWidget *parent)
     // 设置延迟加载定时器
     m_delayedLoadTimer->setSingleShot(true);
     connect(m_delayedLoadTimer, &QTimer::timeout, this, &MainWindow::onDelayedLoad);
+    
+    // 设置预加载定时器
+    m_preloadTimer->setSingleShot(true);
+    connect(m_preloadTimer, &QTimer::timeout, this, &MainWindow::onPreloadTimeout);
 
     //init
     ui->dockWidget->hide();
@@ -343,7 +348,7 @@ void MainWindow::onRowsDataReceived(const struct CsvRowData &rowData, qint64 sta
     
     qDebug() << "接收到数据行: startRow=" << startRow << ", 数据行数=" << rowData.rows.size();
     
-    // 使用数据窗口方式更新表格模型中的数据（3倍于可视区域）
+    // 填充可视窗口的数据
     m_tableModel->setFullData(rowData.rows, startRow);
 
 #ifdef DEBUG_PRINT
@@ -431,6 +436,7 @@ void MainWindow::onVerticalScrollBarValueChanged(int value)
     
     // 当滚动条值变化时，启动延迟加载定时器
     m_delayedLoadTimer->start(200); // 200ms延迟
+    m_preloadTimer->start(500); //500ms 延迟
     Q_UNUSED(value);
 }
 
@@ -456,6 +462,43 @@ void MainWindow::onDelayedLoad()
     m_lastScrollPosition = currentValue;
 }
 
+void MainWindow::onPreloadTimeout()
+{
+    int currentValue = ui->verticalScrollBar->value();
+    qDebug() << "预加载触发: currentValue=" << currentValue;
+    
+    // 执行预加载
+    preloadData(currentValue + 1);
+}
+
+// 预加载数据函数
+void MainWindow::preloadData(qint64 centerRow)
+{
+    // 计算预加载范围：前后各m_visibleRows行
+    // 防止读取表头
+    qint64 preStartRow = qMax(1LL, centerRow - m_visibleRows);
+    qint64 postEndRow = qMin(m_totalRows - 1, centerRow + 2 * m_visibleRows - 1);
+    
+    qDebug() << "预加载数据: 中心行=" << centerRow 
+             << ", 前置范围=[" << preStartRow << "," << (centerRow-1) << "]"
+             << ", 后置范围=[" << (centerRow + m_visibleRows) << "," << postEndRow << "]";
+    
+    // 请求预加载前置数据
+    if (preStartRow < centerRow) {
+        qint64 rowCount = centerRow - preStartRow;
+        emit requestPreloadData(preStartRow, rowCount);
+        qDebug() << "请求前置预加载数据: 起始行=" << (preStartRow) << ", 行数=" << rowCount;
+    }
+    
+    // 请求预加载后置数据
+    qint64 postStartRow = centerRow + m_visibleRows;
+    if (postStartRow <= postEndRow) {
+        qint64 rowCount = postEndRow - postStartRow;
+        emit requestPreloadData(postStartRow, rowCount);
+        qDebug() << "请求后置预加载数据: 起始行=" << (postStartRow) << ", 行数=" << rowCount;
+    }
+}
+
 // 滚动类型识别
 ScrollType MainWindow::detectScrollType(qint64 oldPosition, qint64 newPosition)
 {
@@ -477,9 +520,9 @@ void MainWindow::handleLargeScroll(qint64 targetPosition)
     // 1. 清除当前显示的数据，但保留表头
     m_tableModel->clearDataOnly(); // 只清空数据部分
     
-    // 2. 计算需要加载的数据范围（3倍于可视区域）
+    // 2. 计算需要加载的数据范围
     qint64 startRow = targetPosition;
-    qint64 rowCount = m_visibleRows * 3;
+    qint64 rowCount = m_visibleRows;
     
     qDebug() << "大范围滚动处理: 起始行=" << startRow + 1 << ", 行数=" << rowCount;
     
@@ -529,6 +572,7 @@ void MainWindow::resetScrollBarColor()
     ui->verticalScrollBar->setPalette(pal);
 }
 
+//考虑将滚动条从1开始
 void MainWindow::updateScrollBarRange()
 {
     // 更新滚动条范围
@@ -536,3 +580,35 @@ void MainWindow::updateScrollBarRange()
     ui->verticalScrollBar->setPageStep(m_visibleRows);
     qDebug() << "更新滚动条范围: 0-" << (m_totalRows - m_visibleRows) << ", 步长=" << m_visibleRows;
 }
+
+void MainWindow::onPreloadedDataReceived(const struct CsvRowData &rowData, qint64 startRow)
+{
+    qDebug() << "接收到预加载数据: startRow=" << startRow << ", 数据行数=" << rowData.rows.size();
+    
+    // 根据预加载数据的位置决定是向前还是向后整合数据
+    qint64 currentDataStartRow = m_tableModel->getFullDataStartRow();
+    qint64 preloadedDataEndRow = startRow + rowData.rows.size() - 1;
+    qint64 currentDataEndRow = currentDataStartRow + m_tableModel->getFullDataSize() - 1;
+    
+    if (preloadedDataEndRow < currentDataStartRow) {
+        // 预加载的是前方数据
+        if (m_tableModel->canPrependData(startRow)) {
+            m_tableModel->prependPreloadedData(rowData.rows);
+        }
+    } else if (startRow > currentDataEndRow) {
+        // 预加载的是后方数据
+        if (m_tableModel->canAppendData(preloadedDataEndRow)) {
+            m_tableModel->appendPreloadedData(rowData.rows);
+        }
+    }
+    
+    // 显示CsvReader的性能数据
+    if (!rowData.performanceData.isEmpty()) {
+        // 将CsvReader的性能数据合并到主窗口的性能数据中
+        for (auto it = rowData.performanceData.begin(); it != rowData.performanceData.end(); ++it) {
+            m_performanceData["预加载-" + it.key()] = it.value();
+        }
+        updateStatusBarWithTimingInfo();
+    }
+}
+
