@@ -20,6 +20,12 @@ class TableModel;
 struct CsvRowData; // 前置声明
 QT_END_NAMESPACE
 
+// 添加滚动类型枚举
+enum ScrollType {
+    SMALL_SCROLL,   // 小范围滚动
+    LARGE_SCROLL    // 大范围滚动
+};
+
 class MainWindow : public QMainWindow
 
 {
@@ -58,6 +64,14 @@ private:
     qint64 m_totalRows; // 文件总行数
     qint64 m_visibleRows; // 可视行数
     qint64 m_currentStartRow; // 当前显示的数据起始行
+    qint64 m_lastScrollPosition; // 上次滚动位置
+    bool m_internalScrollBarChange; // 防止滚动条信号循环调用
+    
+    // 添加新函数
+    ScrollType detectScrollType(qint64 oldPosition, qint64 newPosition); // 滚动类型识别
+    void handleLargeScroll(qint64 targetPosition); // 大范围滚动处理
+    void handleSmallScroll(qint64 targetPosition); // 小范围滚动处理
+    
     void generateColumnCheckboxes(const QVector<QString> &headers);
     void toggleSelectAll(bool select);
     void filterCheckboxes(const QString &text);

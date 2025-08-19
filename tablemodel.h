@@ -25,11 +25,20 @@ public:
     void clear();
     void setDataWindow(const QVector<QStringList> &data, qint64 startRow); // 添加设置数据窗口的方法
     qint64 getCurrentWindowStartRow() const; // 获取当前数据窗口的起始行
+    
+    // 双倍窗口新增方法
+    void setFullData(const QVector<QStringList> &data, qint64 startRow); // 设置完整数据（3倍大小）
+    void adjustVisibleWindow(qint64 relativeStartRow); // 调整可视窗口
+    qint64 getFullDataStartRow() const; // 获取完整数据的起始行号
+    int getFullDataSize() const; // 获取完整数据的大小
+    void clearDataOnly(); // 只清空数据，不清空表头
 
 private:
     QVector<QString> m_headers;  // 表头数据
-    QVector<QStringList> m_data; // 表格数据
-    qint64 m_currentWindowStartRow; // 当前数据窗口的起始行
+    QVector<QStringList> m_fullData; // 完整数据（3倍于可视区域）
+    qint64 m_fullDataStartRow; // 完整数据在文件中的起始行号
+    qint64 m_visibleStartRow;  // 可视区域在完整数据中的起始行号
+    qint64 m_visibleRows;      // 可视区域行数
 };
 
 #endif // TABLEMODEL_H

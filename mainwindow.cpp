@@ -22,6 +22,8 @@ MainWindow::MainWindow(QWidget *parent)
     , m_totalRows(0)
     , m_visibleRows(100) // 默认显示100行
     , m_currentStartRow(0) // 初始化当前起始行
+    , m_lastScrollPosition(0) // 初始化上次滚动位置
+    , m_internalScrollBarChange(false) // 初始化滚动条循环调用标志
 {
     ui->setupUi(this);
     
@@ -38,6 +40,11 @@ MainWindow::MainWindow(QWidget *parent)
     // 连接信号和槽
     connect(this, &MainWindow::initCsvReader, m_csvReader, &CsvReader::init);
     connect(this, &MainWindow::requestRowsData, m_csvReader, &CsvReader::readRows); // 连接请求数据行的信号和槽
+    
+    // 创建一个定时器用于重置滚动条颜色
+    m_scrollBarResetTimer = new QTimer(this);
+    m_scrollBarResetTimer->setSingleShot(true);
+    connect(m_scrollBarResetTimer, &QTimer::timeout, this, &MainWindow::resetScrollBarColor);
     connect(m_csvReader, &CsvReader::initializationDataReady, 
             this, &MainWindow::onInitializationDataReceived);
     connect(m_csvReader, &CsvReader::rowDataReady, 
@@ -336,8 +343,8 @@ void MainWindow::onRowsDataReceived(const struct CsvRowData &rowData, qint64 sta
     
     qDebug() << "接收到数据行: startRow=" << startRow << ", 数据行数=" << rowData.rows.size();
     
-    // 使用数据窗口方式更新表格模型中的数据
-    m_tableModel->setDataWindow(rowData.rows, startRow);
+    // 使用数据窗口方式更新表格模型中的数据（3倍于可视区域）
+    m_tableModel->setFullData(rowData.rows, startRow);
 
 #ifdef DEBUG_PRINT
     // 打印模型中的数据信息
@@ -429,20 +436,97 @@ void MainWindow::onVerticalScrollBarValueChanged(int value)
 
 void MainWindow::onDelayedLoad()
 {
+    // 恢复滚动条正常样式
+    ui->verticalScrollBar->setPalette(QPalette());
+    
     // 延迟加载数据
     int currentValue = ui->verticalScrollBar->value();
     
     qDebug() << "延迟加载触发: currentValue=" << currentValue << ", m_currentStartRow=" << m_currentStartRow;
     
     // 检查是否需要加载新数据
-    if (currentValue != m_currentStartRow) {
-        m_currentStartRow = currentValue;
-        qDebug() << "请求数据: 起始行=" << m_currentStartRow + 1 << ", 行数=" << m_visibleRows;
-        // 请求读取数据行，从当前滚动位置开始
-        emit requestRowsData(m_currentStartRow + 1, m_visibleRows); // +1是因为跳过表头
+    ScrollType scrollType = detectScrollType(m_lastScrollPosition, currentValue);
+    
+    if (scrollType == LARGE_SCROLL) {
+        handleLargeScroll(currentValue);
     } else {
-        qDebug() << "无需加载新数据，起始行未变化";
+        handleSmallScroll(currentValue);
     }
+    
+    m_lastScrollPosition = currentValue;
+}
+
+// 滚动类型识别
+ScrollType MainWindow::detectScrollType(qint64 oldPosition, qint64 newPosition)
+{
+    // 根据滚动距离判断是大范围还是小范围滚动
+    qint64 distance = qAbs(newPosition - oldPosition);
+    
+    // 如果滚动距离超过可视区域的一半，则认为是大范围滚动
+    // 否则为小范围滚动
+    if (distance > m_visibleRows / 2) {
+        return LARGE_SCROLL;
+    } else {
+        return SMALL_SCROLL;
+    }
+}
+
+// 大范围滚动处理
+void MainWindow::handleLargeScroll(qint64 targetPosition)
+{
+    // 1. 清除当前显示的数据，但保留表头
+    m_tableModel->clearDataOnly(); // 只清空数据部分
+    
+    // 2. 计算需要加载的数据范围（3倍于可视区域）
+    qint64 startRow = targetPosition;
+    qint64 rowCount = m_visibleRows * 3;
+    
+    qDebug() << "大范围滚动处理: 起始行=" << startRow + 1 << ", 行数=" << rowCount;
+    
+    // 3. 请求数据加载
+    emit requestRowsData(startRow + 1, rowCount); // +1是因为跳过表头
+    
+    // 4. 更新当前起始行
+    m_currentStartRow = targetPosition;
+}
+
+// 小范围滚动处理
+void MainWindow::handleSmallScroll(qint64 targetPosition)
+{
+    // 小范围滚动时，调整TableModel中的可视窗口
+    qint64 relativePosition = targetPosition - m_tableModel->getFullDataStartRow();
+    
+    qDebug() << "小范围滚动处理: targetPosition=" << targetPosition 
+             << ", fullDataStartRow=" << m_tableModel->getFullDataStartRow()
+             << ", relativePosition=" << relativePosition;
+    
+    // 检查目标位置是否在当前Model数据范围内
+    if (relativePosition >= 0 && 
+        relativePosition + m_visibleRows <= m_tableModel->getFullDataSize()) {
+        // 在范围内，只需调整可视窗口
+        m_tableModel->adjustVisibleWindow(relativePosition);
+        
+        // 更新当前起始行
+        m_currentStartRow = targetPosition;
+        
+        qDebug() << "小范围滚动处理完成: 调整可视窗口到" << relativePosition;
+    } else {
+        // 超出范围，需要加载新数据（降级到大范围滚动处理）
+        qDebug() << "小范围滚动超出范围，降级到大范围滚动处理";
+        handleLargeScroll(targetPosition);
+    }
+}
+
+/**
+ * @brief 重置滚动条颜色
+ */
+void MainWindow::resetScrollBarColor()
+{
+    // 恢复滚动条默认颜色
+    QPalette pal = ui->verticalScrollBar->palette();
+    pal.setColor(QPalette::Active, QPalette::Highlight, 
+                 style()->standardPalette().color(QPalette::Active, QPalette::Highlight));
+    ui->verticalScrollBar->setPalette(pal);
 }
 
 void MainWindow::updateScrollBarRange()
