@@ -335,8 +335,6 @@ void MainWindow::onInitializationDataReceived(const QVector<QString> &headers)
     
     // 保存总行数（从CsvReader获取）
     m_totalRows = m_csvReader->getTotalRows();
-
-    m_visibleRows = qMin(m_totalRows,ui->frame->height()/getUniformRowHeight())-1;
     
     qDebug() << "总行数设置为:" << m_totalRows << ", 可视行数:" << m_visibleRows;
     
@@ -361,13 +359,16 @@ void MainWindow::onRowsDataReceived(const struct CsvRowData &rowData, qint64 sta
         PreloadedDataReceived(rowData,startRow);
         return;
     }
+
+    // 1. 清除当前显示的数据，但保留表头
+    m_tableModel->clearDataOnly(); // 只清空数据部分
     
     startTiming(tr("处理数据行"));
     
     qDebug() << "接收到数据行: startRow=" << startRow << ", 数据行数=" << rowData.rows.size();
     
     // 填充可视窗口的数据
-    m_tableModel->setFullData(rowData.rows, startRow);
+    m_tableModel->setModelData(rowData.rows, startRow);
 
 #ifdef DEBUG_PRINT
     // 打印模型中的数据信息
@@ -459,7 +460,6 @@ void MainWindow::onVerticalScrollBarValueChanged(int value)
     {
         // 当滚动条值变化时，启动延迟加载定时器
         m_delayedLoadTimer->start(200); // 200ms延迟
-        m_preloadTimer->start(500);     // 500ms 延迟
     }
     else
     {
@@ -655,9 +655,6 @@ ScrollType MainWindow::detectScrollType(qint64 oldPosition, qint64 newPosition)
 // 大范围滚动处理
 void MainWindow::handleLargeScroll(qint64 targetPosition)
 {
-    // 1. 清除当前显示的数据，但保留表头
-    m_tableModel->clearDataOnly(); // 只清空数据部分
-
     qint64 startRow = targetPosition;
     qint64 rowCount = m_visibleRows;
     
@@ -665,7 +662,7 @@ void MainWindow::handleLargeScroll(qint64 targetPosition)
     
     // 3. 请求数据加载
     emit requestRowsData(startRow + 1, rowCount); // +1是因为跳过表头
-    
+     m_preloadTimer->start(500);     // 500ms 延迟
     // 4. 更新当前起始行
     m_currentStartRow = targetPosition;
 }
@@ -674,26 +671,24 @@ void MainWindow::handleLargeScroll(qint64 targetPosition)
 void MainWindow::handleSmallScroll(qint64 targetPosition)
 {
     // 小范围滚动时，调整TableModel中的可视窗口
-    qint64 relativePosition = targetPosition - m_tableModel->getFullDataStartRow();
+    qint64 relativePosition = targetPosition - m_lastScrollPosition;
     
     qDebug() << "小范围滚动处理: targetPosition=" << targetPosition 
-             << ", fullDataStartRow=" << m_tableModel->getFullDataStartRow()
-             << ", relativePosition=" << relativePosition;
-    
-    // 检查目标位置是否在当前Model数据范围内
-    if (relativePosition >= 0 && 
-        relativePosition + m_visibleRows <= m_tableModel->getFullDataSize()) {
-        // 在范围内，只需调整可视窗口
-        m_tableModel->adjustVisibleWindow(relativePosition);
-        
-        // 更新当前起始行
-        m_currentStartRow = targetPosition;
-        
-        qDebug() << "小范围滚动处理完成: 调整可视窗口到" << relativePosition;
-    } else {
-        // 超出范围，需要加载新数据（降级到大范围滚动处理）
+             << ", relativePosition=" << relativePosition
+             <<", visiableStart=" << m_tableModel->getVisiableStartRow()
+             <<", fulldatasize -1="<<m_tableModel->getFullDataSize()-1;
+
+    //if()上下方向移动预加载
+
+    if((m_tableModel->getVisiableStartRow() + relativePosition < 1) || (m_tableModel->getVisiableStartRow() + m_visibleRows + relativePosition > m_tableModel->getFullDataSize()-1))
+    {
+        //待处理为直接预加载
         qDebug() << "小范围滚动超出范围，降级到大范围滚动处理";
         handleLargeScroll(targetPosition);
+    }
+    else
+    {
+        m_tableModel->adjustVisibleWindow(relativePosition);
     }
 }
 
@@ -713,6 +708,7 @@ void MainWindow::resetScrollBarColor()
 void MainWindow::updateScrollBarRange()
 {    
     // 更新滚动条范围
+    m_visibleRows = qMin(m_totalRows,ui->frame->height()/getUniformRowHeight())-2;
     ui->verticalScrollBar->setRange(0, m_totalRows - m_visibleRows);
     ui->verticalScrollBar->setPageStep(m_visibleRows);
     qDebug() << "更新滚动条范围: 0-" << (m_totalRows - m_visibleRows) << ", 步长=" << m_visibleRows;

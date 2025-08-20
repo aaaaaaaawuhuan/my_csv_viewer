@@ -27,9 +27,10 @@ public:
     qint64 getCurrentWindowStartRow() const; // 获取当前数据窗口的起始行
     
     // 双倍窗口新增方法
-    void setFullData(const QVector<QStringList> &data, qint64 startRow); // 设置完整数据（3倍大小）
+    void setModelData(const QVector<QStringList> &data, qint64 startRow); // 设置完整数据（3倍大小）
     void adjustVisibleWindow(qint64 relativeStartRow); // 调整可视窗口
     qint64 getFullDataStartRow() const; // 获取完整数据的起始行号
+    qint64 getVisiableStartRow() const;
     int getFullDataSize() const; // 获取完整数据的大小
     void clearDataOnly(); // 只清空数据，不清空表头
     

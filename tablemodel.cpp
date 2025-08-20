@@ -27,6 +27,8 @@ int TableModel::columnCount(const QModelIndex &parent) const
 
 QVariant TableModel::data(const QModelIndex &index, int role) const
 {
+    static int old = 0U;
+
     if (!index.isValid() || index.row() >= m_visibleRows || index.column() >= m_headers.size())
         return QVariant();
     
@@ -55,6 +57,7 @@ QVariant TableModel::headerData(int section, Qt::Orientation orientation, int ro
             return m_headers.at(section);
         } else if (orientation == Qt::Vertical) {
             // 显示实际的行号
+            //qDebug()<<m_fullDataStartRow << m_visibleStartRow << section;
             return QString::number(m_fullDataStartRow + m_visibleStartRow + section);
         }
     }
@@ -121,7 +124,7 @@ qint64 TableModel::getCurrentWindowStartRow() const
 }
 
 // 得到请求的可视窗口数据后初始化模型数据
-void TableModel::setFullData(const QVector<QStringList> &data, qint64 startRow)
+void TableModel::setModelData(const QVector<QStringList> &data, qint64 startRow)
 {
     qDebug() << "设置完整数据: 数据行数=" << data.size() << ", 起始行=" << startRow;
     
@@ -138,24 +141,30 @@ void TableModel::setFullData(const QVector<QStringList> &data, qint64 startRow)
 
 void TableModel::adjustVisibleWindow(qint64 relativeStartRow)
 {
-    if (relativeStartRow >= 0 && 
-        relativeStartRow + m_visibleRows <= m_fullData.size()) {
-        m_visibleStartRow = relativeStartRow;
-        // 只需要通知视图更新，不需要重置整个模型
-        emit dataChanged(
-            index(0, 0), 
-            index(m_visibleRows - 1, columnCount() - 1)
+    if(m_visibleStartRow + relativeStartRow < 0)
+        m_visibleStartRow = 0;
+    else
+        m_visibleStartRow += relativeStartRow;
+
+    emit dataChanged(
+        index(0, 0),
+        index(m_visibleRows - 1, columnCount() - 1)
         );
-        qDebug() << "调整可视窗口: 新的可视起始行=" << m_visibleStartRow;
-    } else {
-        qDebug() << "调整可视窗口失败: relativeStartRow=" << relativeStartRow
-                 << ", 可视行数=" << m_visibleRows << ", 完整数据大小=" << m_fullData.size();
-    }
+    // 告诉视图：垂直表头的数据变了，需要重新获取 headerData
+    emit headerDataChanged(Qt::Vertical, 0, m_visibleRows - 1);
+
+    //qDebug() << "调整可视窗口:"<<"变更行数"<< relativeStartRow <<"新的可视起始行=" << m_visibleStartRow+m_fullDataStartRow<<"模型起="<<m_fullDataStartRow <<"模型终="<<m_fullDataStartRow + getFullDataSize();
+    //qDebug() << "m_visibleRows-1 = " <<m_visibleRows <<"columnCount()"<<columnCount();
 }
 
 qint64 TableModel::getFullDataStartRow() const
 {
     return m_fullDataStartRow;
+}
+
+qint64 TableModel::getVisiableStartRow() const
+{
+    return m_visibleStartRow;
 }
 
 int TableModel::getFullDataSize() const
@@ -187,6 +196,7 @@ void TableModel::prependPreloadedData(const QVector<QStringList> &data)
     
     // 更新起始行号
     m_fullDataStartRow -= data.size();
+    m_visibleStartRow += data.size();
     
     // 维持三倍窗口大小
     maintainTripleWindowSize();
