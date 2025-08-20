@@ -39,6 +39,7 @@ public:
     bool canPrependData(qint64 requestedStartRow) const; // 检查是否可以向前预加载
     bool canAppendData(qint64 requestedEndRow) const;   // 检查是否可以向后预加载
     void maintainTripleWindowSize(); // 维持三倍窗口大小
+    void setVisibleRows(int visibleRows); // 设置可视行数
 
 private:
     QVector<QString> m_headers;  // 表头数据

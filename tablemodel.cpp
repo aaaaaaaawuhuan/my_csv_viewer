@@ -242,3 +242,8 @@ void TableModel::maintainTripleWindowSize()
         }
     }
 }
+
+void TableModel::setVisibleRows(int visibleRows)
+{
+    m_visibleRows = visibleRows;
+}

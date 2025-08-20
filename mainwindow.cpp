@@ -10,6 +10,10 @@
 #include <QDateTime>
 #include <QScrollBar>
 #include <QTimer>
+#include <QResizeEvent>  // 添加QResizeEvent头文件
+#include <QHeaderView>   // 添加QHeaderView头文件
+#include <QWheelEvent>   // 添加鼠标滚轮事件头文件
+#include <QKeyEvent>     // 添加键盘事件头文件
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -19,17 +23,24 @@ MainWindow::MainWindow(QWidget *parent)
     , m_tableModel(new TableModel(this))  // 初始化数据模型
     , m_workerThread(new QThread)
     , m_delayedLoadTimer(new QTimer(this))
+    , m_scrollBarResetTimer(new QTimer(this))
     , m_preloadTimer(new QTimer(this))
     , m_totalRows(0)
     , m_visibleRows(100) // 默认显示100行
     , m_currentStartRow(0) // 初始化当前起始行
     , m_lastScrollPosition(0) // 初始化上次滚动位置
     , m_internalScrollBarChange(false) // 初始化滚动条循环调用标志
+    , m_defaultRowHeight(25) // 默认行高25像素
 {
     ui->setupUi(this);
     
     // 将数据模型设置到tableView中
     ui->tableView->setModel(m_tableModel);
+    
+    // 设置固定行高并启用文本换行
+    ui->tableView->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed);
+    ui->tableView->verticalHeader()->setDefaultSectionSize(m_defaultRowHeight);
+    ui->tableView->setWordWrap(true);
     
     // 禁用QTableView自带的垂直滚动条
     ui->tableView->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -41,6 +52,7 @@ MainWindow::MainWindow(QWidget *parent)
     // 连接信号和槽
     connect(this, &MainWindow::initCsvReader, m_csvReader, &CsvReader::init);
     connect(this, &MainWindow::requestRowsData, m_csvReader, &CsvReader::readRows); // 连接请求数据行的信号和槽
+    connect(this, &MainWindow::requestPreloadData, m_csvReader, &CsvReader::readRows); // 连接预加载数据请求信号和槽
     
     // 创建一个定时器用于重置滚动条颜色
     m_scrollBarResetTimer = new QTimer(this);
@@ -323,8 +335,10 @@ void MainWindow::onInitializationDataReceived(const QVector<QString> &headers)
     
     // 保存总行数（从CsvReader获取）
     m_totalRows = m_csvReader->getTotalRows();
+
+    m_visibleRows = qMin(m_totalRows,ui->frame->height()/getUniformRowHeight())-1;
     
-    qDebug() << "总行数设置为:" << m_totalRows;
+    qDebug() << "总行数设置为:" << m_totalRows << ", 可视行数:" << m_visibleRows;
     
     // 更新滚动条范围
     updateScrollBarRange();
@@ -342,7 +356,11 @@ void MainWindow::onInitializationDataReceived(const QVector<QString> &headers)
 
 void MainWindow::onRowsDataReceived(const struct CsvRowData &rowData, qint64 startRow)
 {
-    Q_UNUSED(startRow);
+    if(startRow != m_currentStartRow+1)
+    {
+        PreloadedDataReceived(rowData,startRow);
+        return;
+    }
     
     startTiming(tr("处理数据行"));
     
@@ -433,11 +451,141 @@ void MainWindow::generateColumnCheckboxes(const QVector<QString> &headers)
 void MainWindow::onVerticalScrollBarValueChanged(int value)
 {
     qDebug() << "滚动条值变化: value=" << value << ", 当前起始行=" << m_currentStartRow;
+    int currentValue = ui->verticalScrollBar->value();
+    // 检查是否需要加载新数据
+    ScrollType scrollType = detectScrollType(m_lastScrollPosition, currentValue);
+
+    if (scrollType == LARGE_SCROLL)
+    {
+        // 当滚动条值变化时，启动延迟加载定时器
+        m_delayedLoadTimer->start(200); // 200ms延迟
+        m_preloadTimer->start(500);     // 500ms 延迟
+    }
+    else
+    {
+        handleSmallScroll(currentValue);
+    }
+
+    m_lastScrollPosition = currentValue;
+}
+
+void MainWindow::resizeEvent(QResizeEvent *event)
+{
+    QMainWindow::resizeEvent(event);
     
-    // 当滚动条值变化时，启动延迟加载定时器
-    m_delayedLoadTimer->start(200); // 200ms延迟
-    m_preloadTimer->start(500); //500ms 延迟
-    Q_UNUSED(value);
+    // 更新可视行数
+    updateVisibleRows();
+    
+    // 更新滚动条范围
+    updateScrollBarRange();
+    
+    // 重新加载当前可视区域数据以适应新大小
+    handleLargeScroll(ui->verticalScrollBar->value());
+}
+
+void MainWindow::wheelEvent(QWheelEvent *event)
+{
+    // 计算滚动行数
+    int delta = event->angleDelta().y();
+    int scrollRows = -delta / 120; // 通常每120个单位滚动1行
+    
+    int oldValue = ui->verticalScrollBar->value();
+    // 计算新的滚动条值并立即应用限制
+    int newScrollBarValue = qBound(0, ui->verticalScrollBar->value() + scrollRows, 
+                                   ui->verticalScrollBar->maximum());
+    
+    qDebug() << "鼠标滚轮事件: delta=" << delta << ", scrollRows=" << scrollRows 
+             << ", oldValue=" << oldValue << ", newValue=" << newScrollBarValue;
+    
+    // 更新滚动条值（会触发onVerticalScrollBarValueChanged）
+    m_internalScrollBarChange = true;
+    ui->verticalScrollBar->setValue(newScrollBarValue);
+    
+    // 接受事件
+    event->accept();
+}
+
+void MainWindow::keyPressEvent(QKeyEvent *event)
+{
+    int currentScrollBarValue = ui->verticalScrollBar->value();
+    int newScrollBarValue = currentScrollBarValue;
+    
+    qDebug() << "键盘事件: key=" << event->key() << ", currentValue=" << currentScrollBarValue;
+
+    switch (event->key()) {
+    case Qt::Key_Up:
+        newScrollBarValue = qMax(0, currentScrollBarValue - 1);
+        qDebug() << "处理向上键: newValue=" << newScrollBarValue;
+        break;
+    case Qt::Key_Down:
+        newScrollBarValue = qMin(ui->verticalScrollBar->maximum(), 
+                                currentScrollBarValue + 1);
+        qDebug() << "处理向下键: newValue=" << newScrollBarValue;
+        break;
+    case Qt::Key_PageUp:
+        newScrollBarValue = qMax(0, currentScrollBarValue - m_visibleRows);
+        qDebug() << "处理PageUp键: newValue=" << newScrollBarValue << ", m_visibleRows=" << m_visibleRows;
+        break;
+    case Qt::Key_PageDown:
+        newScrollBarValue = qMin(ui->verticalScrollBar->maximum(), 
+                                currentScrollBarValue + m_visibleRows);
+        qDebug() << "处理PageDown键: newValue=" << newScrollBarValue << ", m_visibleRows=" << m_visibleRows;
+        break;
+    case Qt::Key_Home:
+        newScrollBarValue = 0;
+        qDebug() << "处理Home键: newValue=" << newScrollBarValue;
+        break;
+    case Qt::Key_End:
+        newScrollBarValue = ui->verticalScrollBar->maximum();
+        qDebug() << "处理End键: newValue=" << newScrollBarValue;
+        break;
+    default:
+        // 其他按键不处理，调用父类处理
+        qDebug() << "未处理的按键: key=" << event->key();
+        QMainWindow::keyPressEvent(event);
+        return;
+    }
+    
+    // 更新滚动条值
+    if (newScrollBarValue != currentScrollBarValue) {
+        qDebug() << "更新滚动条值: " << currentScrollBarValue << " -> " << newScrollBarValue;
+        m_internalScrollBarChange = true;
+        ui->verticalScrollBar->setValue(newScrollBarValue);
+    }
+    
+    // 接受事件
+    event->accept();
+}
+
+void MainWindow::updateVisibleRows()
+{
+    // 获取TableView的可视区域高度
+    int viewportHeight = ui->tableView->viewport()->height();
+    int tableViewHeight = ui->tableView->height();
+    
+    // 使用统一的行高
+    int uniformRowHeight = getUniformRowHeight();
+    
+    // 计算可视行数
+    int visibleRows = viewportHeight / uniformRowHeight;
+    
+    // 确保至少显示1行，最多不超过一个合理的上限
+    m_visibleRows = qBound(1, visibleRows, 200); // 最多显示200行
+    
+    // 同步到TableModel
+    m_tableModel->setVisibleRows(m_visibleRows);
+    
+    qDebug() << "更新可视行数: viewportHeight=" << viewportHeight 
+             << ", tableViewHeight=" << tableViewHeight
+             << ", uniformRowHeight=" << uniformRowHeight 
+             << ", visibleRows=" << visibleRows
+             << ", m_visibleRows=" << m_visibleRows;
+}
+
+int MainWindow::getUniformRowHeight() const
+{
+    // 使用固定的默认行高
+    return m_defaultRowHeight;
 }
 
 void MainWindow::onDelayedLoad()
@@ -449,17 +597,7 @@ void MainWindow::onDelayedLoad()
     int currentValue = ui->verticalScrollBar->value();
     
     qDebug() << "延迟加载触发: currentValue=" << currentValue << ", m_currentStartRow=" << m_currentStartRow;
-    
-    // 检查是否需要加载新数据
-    ScrollType scrollType = detectScrollType(m_lastScrollPosition, currentValue);
-    
-    if (scrollType == LARGE_SCROLL) {
-        handleLargeScroll(currentValue);
-    } else {
-        handleSmallScroll(currentValue);
-    }
-    
-    m_lastScrollPosition = currentValue;
+    handleLargeScroll(currentValue);
 }
 
 void MainWindow::onPreloadTimeout()
@@ -519,8 +657,7 @@ void MainWindow::handleLargeScroll(qint64 targetPosition)
 {
     // 1. 清除当前显示的数据，但保留表头
     m_tableModel->clearDataOnly(); // 只清空数据部分
-    
-    // 2. 计算需要加载的数据范围
+
     qint64 startRow = targetPosition;
     qint64 rowCount = m_visibleRows;
     
@@ -574,14 +711,14 @@ void MainWindow::resetScrollBarColor()
 
 //考虑将滚动条从1开始
 void MainWindow::updateScrollBarRange()
-{
+{    
     // 更新滚动条范围
     ui->verticalScrollBar->setRange(0, m_totalRows - m_visibleRows);
     ui->verticalScrollBar->setPageStep(m_visibleRows);
     qDebug() << "更新滚动条范围: 0-" << (m_totalRows - m_visibleRows) << ", 步长=" << m_visibleRows;
 }
 
-void MainWindow::onPreloadedDataReceived(const struct CsvRowData &rowData, qint64 startRow)
+void MainWindow::PreloadedDataReceived(const struct CsvRowData &rowData, qint64 startRow)
 {
     qDebug() << "接收到预加载数据: startRow=" << startRow << ", 数据行数=" << rowData.rows.size();
     
