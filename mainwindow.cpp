@@ -206,21 +206,13 @@ void MainWindow::on_pushButton_filter_clicked()
         endTiming(tr("筛选显示"));
         return;
     }
-    
+
     // 显示表格视图
     ui->tableView->show();
-    
-    // 清空之前的数据
-    m_tableModel->clear();
-    
-    // 重新设置表头
-    m_tableModel->setHeaders(m_headers);
     
     // 设置选中的列
     m_tableModel->setSelectedColumns(selectedColumns);
     
-    // 请求读取数据行（这里我们先读取前100行作为示例）
-    emit requestRowsData(1, m_visibleRows); // 从第1行开始读取可视行数（跳过表头）
     
     endTiming(tr("筛选显示"));
 }
@@ -314,6 +306,9 @@ void MainWindow::onInitializationDataReceived(const QVector<QString> &headers)
     
     // 显示dockWidget
     ui->dockWidget->show();
+
+    // 清空之前的数据
+    m_tableModel->clear();
     
     // 根据表头生成复选框
     generateColumnCheckboxes(headers);
@@ -331,6 +326,8 @@ void MainWindow::onInitializationDataReceived(const QVector<QString> &headers)
     
     // 更新滚动条范围
     updateScrollBarRange();
+
+    emit requestRowsData(1, m_visibleRows); // 从第1行开始读取可视行数（跳过表头）
     
     // 初始化TableView的滚动条
     QScrollBar* tableViewScrollBar = ui->tableView->verticalScrollBar();
@@ -440,7 +437,7 @@ void MainWindow::generateColumnCheckboxes(const QVector<QString> &headers)
     for (const QString &header : headers) {
         QTreeWidgetItem *item = new QTreeWidgetItem(treeWidget);
         item->setText(0, header);
-        item->setCheckState(0, Qt::Checked); // 默认选中
+        item->setCheckState(0, Qt::Unchecked); // 默认选中
         item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
     }
     
