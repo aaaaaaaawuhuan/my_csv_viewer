@@ -444,15 +444,15 @@ void MainWindow::generateColumnCheckboxes(const QVector<QString> &headers)
         item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
     }
     
-    // 设置树形控件的一些属性
+    // 设置树形控件的一些属性，确保正确填充空间
     treeWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    treeWidget->setMinimumHeight(200);
-    treeWidget->setMaximumHeight(400); // 限制最大高度
+    treeWidget->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     
     // 插入到布局中倒数第二个位置（在spacer之前）
     layout->insertWidget(layout->count() - 1, treeWidget);
     
-    // 强制重新计算布局
+    // 强制更新布局
+    treeWidget->updateGeometry();
     contentWidget->updateGeometry();
     scrollArea->update();
     
