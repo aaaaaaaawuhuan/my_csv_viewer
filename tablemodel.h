@@ -25,6 +25,8 @@ public:
     void clear();
     void setDataWindow(const QVector<QStringList> &data, qint64 startRow); // 添加设置数据窗口的方法
     qint64 getCurrentWindowStartRow() const; // 获取当前数据窗口的起始行
+    void setSelectedColumns(const QVector<QString>& selectedColumns); // 设置选中的列
+    const QVector<int>& getSelectedColumnIndexes() const; // 获取选中的列索引
     
     // 双倍窗口新增方法
     void setModelData(const QVector<QStringList> &data, qint64 startRow); // 设置完整数据（3倍大小）
@@ -45,6 +47,7 @@ public:
 private:
     QVector<QString> m_headers;  // 表头数据
     QVector<QStringList> m_fullData; // 完整数据（3倍于可视区域）
+    QVector<int> m_selectedColumnIndexes; // 选中的列索引
     qint64 m_fullDataStartRow; // 完整数据在文件中的起始行号
     qint64 m_visibleStartRow;  // 可视区域在完整数据中的起始行号
     qint64 m_visibleRows;      // 可视区域行数

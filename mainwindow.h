@@ -12,6 +12,7 @@
 #include <QElapsedTimer>
 #include <QMap>
 #include <QTimer>
+#include <QTreeWidget>
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }

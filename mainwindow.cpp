@@ -15,6 +15,7 @@
 #include <QWheelEvent>   // 添加鼠标滚轮事件头文件
 #include <QKeyEvent>     // 添加键盘事件头文件
 
+
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
@@ -186,12 +187,16 @@ void MainWindow::on_pushButton_filter_clicked()
     QWidget *contentWidget = scrollArea->widget();
     if (!contentWidget) return;
     
-    // 获取所有选中的复选框
-    QList<QCheckBox*> checkBoxList = contentWidget->findChildren<QCheckBox*>();
+    // 获取QTreeWidget控件
+    QTreeWidget *treeWidget = contentWidget->findChild<QTreeWidget*>("columnTreeWidget");
+    if (!treeWidget) return;
+    
+    // 获取所有选中的树项
     QVector<QString> selectedColumns;
-    for (QCheckBox *checkBox : checkBoxList) {
-        if (checkBox->isChecked()) {
-            selectedColumns.append(checkBox->text());
+    for (int i = 0; i < treeWidget->topLevelItemCount(); ++i) {
+        QTreeWidgetItem *item = treeWidget->topLevelItem(i);
+        if (item->checkState(0) == Qt::Checked) {
+            selectedColumns.append(item->text(0));
         }
     }
     
@@ -210,6 +215,9 @@ void MainWindow::on_pushButton_filter_clicked()
     
     // 重新设置表头
     m_tableModel->setHeaders(m_headers);
+    
+    // 设置选中的列
+    m_tableModel->setSelectedColumns(selectedColumns);
     
     // 请求读取数据行（这里我们先读取前100行作为示例）
     emit requestRowsData(1, m_visibleRows); // 从第1行开始读取可视行数（跳过表头）
@@ -232,48 +240,27 @@ void MainWindow::filterCheckboxes(const QString &text)
     
     QWidget *contentWidget = scrollArea->widget();
     if (!contentWidget) return;
-
-    // 获取当前布局
-    QVBoxLayout* layout = qobject_cast<QVBoxLayout*>(contentWidget->layout());
-    if (!layout) return;
-
-    // 创建临时列表存储所有复选框及其原始索引
-    QList<QCheckBox*> checkBoxList = contentWidget->findChildren<QCheckBox*>();
-    QList<QPair<QCheckBox*, int>> checkBoxWithIndex;
     
-    // 获取所有复选框及其在布局中的索引（排除spacer）
-    for (int i = 0; i < layout->count(); ++i) {
-        QLayoutItem* item = layout->itemAt(i);
-        if (item) {
-            QWidget* widget = item->widget();
-            QCheckBox* checkBox = qobject_cast<QCheckBox*>(widget);
-            if (checkBox) {
-                checkBoxWithIndex.append(qMakePair(checkBox, i));
-            }
-        }
-    }
+    // 获取QTreeWidget控件
+    QTreeWidget *treeWidget = contentWidget->findChild<QTreeWidget*>();
+    if (!treeWidget) return;
     
-    // 根据输入文本过滤复选框
-    for (auto pair : checkBoxWithIndex) {
-        QCheckBox* checkBox = pair.first;
-        // 根据输入文本决定是否显示复选框
+    // 根据输入文本过滤树项
+    for (int i = 0; i < treeWidget->topLevelItemCount(); ++i) {
+        QTreeWidgetItem *item = treeWidget->topLevelItem(i);
+        // 根据输入文本决定是否显示树项
         if (text.isEmpty() || text == "输入列名") {
-            // 如果输入框为空或为默认文本，显示所有复选框
-            checkBox->show();
+            // 如果输入框为空或为默认文本，显示所有树项
+            item->setHidden(false);
         } else {
-            // 根据文本过滤复选框
-            if (checkBox->text().contains(text, Qt::CaseInsensitive)) {
-                checkBox->show();
+            // 根据文本过滤树项
+            if (item->text(0).contains(text, Qt::CaseInsensitive)) {
+                item->setHidden(false);
             } else {
-                checkBox->hide();
+                item->setHidden(true);
             }
         }
     }
-    
-    // 强制重新计算布局
-    layout->invalidate();
-    contentWidget->updateGeometry();
-    scrollArea->update();
     
     endTiming(tr("筛选列"));
 }
@@ -291,12 +278,16 @@ void MainWindow::toggleSelectAll(bool select)
     QWidget *contentWidget = scrollArea->widget();
     if (!contentWidget) return;
     
-    // 获取所有可见的复选框并设置它们的选中状态
-    QList<QCheckBox*> checkBoxList = contentWidget->findChildren<QCheckBox*>();
-    for (QCheckBox *checkBox : checkBoxList) {
-        if (checkBox->isVisible()) {
-            checkBox->setChecked(select);
-        }
+    // 获取QTreeWidget控件
+    QTreeWidget *treeWidget = contentWidget->findChild<QTreeWidget*>();
+    if (!treeWidget) return;
+    
+    // 获取所有可见的树项并设置它们的选中状态
+    for (int i = 0; i < treeWidget->topLevelItemCount(); ++i) {
+        QTreeWidgetItem *item = treeWidget->topLevelItem(i);
+        if (item->isHidden()) continue;
+        
+        item->setCheckState(0, select ? Qt::Checked : Qt::Unchecked);
     }
     
     endTiming(select ? tr("全选") : tr("清空"));
@@ -429,8 +420,8 @@ void MainWindow::generateColumnCheckboxes(const QVector<QString> &headers)
         QLayoutItem* item = layout->itemAt(i);
         if (item) {
             QWidget* widget = item->widget();
-            // 如果是复选框，删除它
-            if (qobject_cast<QCheckBox*>(widget)) {
+            // 如果是复选框或其他旧控件，删除它
+            if (qobject_cast<QCheckBox*>(widget) || qobject_cast<QTreeWidget*>(widget)) {
                 layout->takeAt(i);
                 delete widget;
                 delete item;
@@ -438,13 +429,32 @@ void MainWindow::generateColumnCheckboxes(const QVector<QString> &headers)
         }
     }
     
-    // 为每个表头创建一个复选框，并插入到布局中（在spacer之前）
+    // 创建QTreeWidget来显示列选项
+    QTreeWidget *treeWidget = new QTreeWidget(contentWidget);
+    treeWidget->setObjectName("columnTreeWidget"); // 设置对象名称
+    treeWidget->setHeaderLabel(tr("选择要显示的列"));
+    treeWidget->setSelectionMode(QAbstractItemView::NoSelection);
+    treeWidget->setFocusPolicy(Qt::NoFocus);
+    
+    // 为每个表头创建一个树项
     for (const QString &header : headers) {
-        QCheckBox *checkBox = new QCheckBox(header, contentWidget);
-        checkBox->setChecked(true); // 默认选中
-        // 插入到布局中倒数第二个位置（在spacer之前）
-        layout->insertWidget(layout->count() - 1, checkBox);
+        QTreeWidgetItem *item = new QTreeWidgetItem(treeWidget);
+        item->setText(0, header);
+        item->setCheckState(0, Qt::Checked); // 默认选中
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
     }
+    
+    // 设置树形控件的一些属性
+    treeWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    treeWidget->setMinimumHeight(200);
+    treeWidget->setMaximumHeight(400); // 限制最大高度
+    
+    // 插入到布局中倒数第二个位置（在spacer之前）
+    layout->insertWidget(layout->count() - 1, treeWidget);
+    
+    // 强制重新计算布局
+    contentWidget->updateGeometry();
+    scrollArea->update();
     
     endTiming(tr("创建复选框"));
 }

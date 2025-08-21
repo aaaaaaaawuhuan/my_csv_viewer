@@ -22,14 +22,15 @@ int TableModel::columnCount(const QModelIndex &parent) const
     if (parent.isValid())
         return 0;
     
-    return m_headers.size();
+    // 只返回选中的列数
+    return m_selectedColumnIndexes.isEmpty() ? m_headers.size() : m_selectedColumnIndexes.size();
 }
 
 QVariant TableModel::data(const QModelIndex &index, int role) const
 {
     static int old = 0U;
 
-    if (!index.isValid() || index.row() >= m_visibleRows || index.column() >= m_headers.size())
+    if (!index.isValid() || index.row() >= m_visibleRows || index.column() >= columnCount())
         return QVariant();
     
     // 计算在完整数据中的实际行号
@@ -37,14 +38,20 @@ QVariant TableModel::data(const QModelIndex &index, int role) const
     if (actualRow >= m_fullData.size())
         return QVariant();
     
+    // 确定实际的列索引
+    int actualColumn = index.column();
+    if (!m_selectedColumnIndexes.isEmpty() && actualColumn < m_selectedColumnIndexes.size()) {
+        actualColumn = m_selectedColumnIndexes[actualColumn];
+    }
+    
     // 检查该行是否有足够的列数据
     const QStringList& rowData = m_fullData.at(actualRow);
-    if (index.column() >= rowData.size()) {
+    if (actualColumn >= rowData.size()) {
         return QVariant(); // 如果该行没有足够的列数据，则返回空
     }
     
     if (role == Qt::DisplayRole) {
-        return rowData.at(index.column());
+        return rowData.at(actualColumn);
     }
     
     return QVariant();
@@ -53,8 +60,16 @@ QVariant TableModel::data(const QModelIndex &index, int role) const
 QVariant TableModel::headerData(int section, Qt::Orientation orientation, int role) const
 {
     if (role == Qt::DisplayRole) {
-        if (orientation == Qt::Horizontal && section < m_headers.size()) {
-            return m_headers.at(section);
+        if (orientation == Qt::Horizontal) {
+            // 确定实际的列索引
+            int actualSection = section;
+            if (!m_selectedColumnIndexes.isEmpty() && section < m_selectedColumnIndexes.size()) {
+                actualSection = m_selectedColumnIndexes[section];
+            }
+            
+            if (actualSection < m_headers.size()) {
+                return m_headers.at(actualSection);
+            }
         } else if (orientation == Qt::Vertical) {
             // 显示实际的行号
             //qDebug()<<m_fullDataStartRow << m_visibleStartRow << section;
@@ -73,6 +88,7 @@ void TableModel::setHeaders(const QVector<QString> &headers)
     m_fullDataStartRow = 0;
     m_visibleStartRow = 0;
     m_visibleRows = 0;
+    m_selectedColumnIndexes.clear();
     endResetModel();
 }
 
@@ -98,6 +114,7 @@ void TableModel::clear()
     m_fullDataStartRow = 0;
     m_visibleStartRow = 0;
     m_visibleRows = 0;
+    m_selectedColumnIndexes.clear();
     endResetModel();
 }
 
@@ -256,4 +273,29 @@ void TableModel::maintainTripleWindowSize()
 void TableModel::setVisibleRows(int visibleRows)
 {
     m_visibleRows = visibleRows;
+}
+
+void TableModel::setSelectedColumns(const QVector<QString>& selectedColumns)
+{
+    beginResetModel();
+    m_selectedColumnIndexes.clear();
+    
+    // 根据选中的列名查找对应的索引
+    for (const QString& columnName : selectedColumns) {
+        for (int i = 0; i < m_headers.size(); ++i) {
+            if (m_headers[i] == columnName) {
+                m_selectedColumnIndexes.append(i);
+                break;
+            }
+        }
+    }
+    
+    // 对索引进行排序以保持列的原始顺序
+    std::sort(m_selectedColumnIndexes.begin(), m_selectedColumnIndexes.end());
+    endResetModel();
+}
+
+const QVector<int>& TableModel::getSelectedColumnIndexes() const
+{
+    return m_selectedColumnIndexes;
 }
