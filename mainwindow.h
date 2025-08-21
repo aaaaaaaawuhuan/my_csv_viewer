@@ -28,7 +28,6 @@ enum ScrollType {
 };
 
 class MainWindow : public QMainWindow
-
 {
     Q_OBJECT
 
@@ -44,6 +43,7 @@ signals:
 private slots:
     void on_action_open_triggered();
     void on_action_show_select_triggered();
+    void on_action_goto_row_triggered(); // 添加跳转到行的槽函数
     void on_pushButton_all_clicked();
     void on_pushButton_clear_clicked();
     void on_pushButton_filter_clicked();
@@ -94,6 +94,7 @@ private:
     void updateVisibleRows(); // 更新可视行数
     int getUniformRowHeight() const; // 获取统一行高
     void PreloadedDataReceived(const struct CsvRowData &rowData, qint64 startRow); // 添加预加载数据函数
+    void gotoRow(qint64 row); // 添加跳转到指定行的函数
 };
 
 #endif // MAINWINDOW_H

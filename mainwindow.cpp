@@ -14,6 +14,8 @@
 #include <QHeaderView>   // 添加QHeaderView头文件
 #include <QWheelEvent>   // 添加鼠标滚轮事件头文件
 #include <QKeyEvent>     // 添加键盘事件头文件
+#include <QInputDialog>  // 添加输入对话框头文件
+#include <QMessageBox>   // 添加消息框头文件
 
 
 MainWindow::MainWindow(QWidget *parent)
@@ -752,3 +754,37 @@ void MainWindow::PreloadedDataReceived(const struct CsvRowData &rowData, qint64 
     }
 }
 
+
+void MainWindow::on_action_goto_row_triggered()
+{
+    if (m_totalRows <= 0) {
+        QMessageBox::information(this, tr("提示"), tr("请先打开一个CSV文件"));
+        return;
+    }
+    
+    bool ok;
+    qint64 row = QInputDialog::getInt(this, tr("跳转到行"), 
+                                     tr("请输入行号 (1-%1):").arg(m_totalRows),
+                                     1, 1, static_cast<int>(m_totalRows), 1, &ok);
+    if (ok) {
+        gotoRow(row);
+    }
+}
+
+void MainWindow::gotoRow(qint64 row)
+{
+    // 行号从1开始，转换为从0开始的索引并考虑表头
+    qint64 targetRow = row - 1; // 减1得到0基索引
+    
+    // 检查目标行是否有效
+    if (targetRow < 0 || targetRow >= m_totalRows) {
+        QMessageBox::warning(this, tr("错误"), tr("行号超出范围"));
+        return;
+    }
+    
+    // 设置滚动条位置为目标行
+    ui->verticalScrollBar->setValue(static_cast<int>(targetRow));
+    
+    // 直接处理大范围滚动以加载目标行数据
+    handleLargeScroll(targetRow);
+}
