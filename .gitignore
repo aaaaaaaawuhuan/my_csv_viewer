@@ -156,3 +156,4 @@ csv-viewer - 副本/mainwindow.ui
 csv-viewer - 副本/TableModel.cpp
 csv-viewer - 副本/TableModel.h
 CMakeLists.txt.user
+.vscode/settings.json
