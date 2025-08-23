@@ -4,6 +4,12 @@
 #include <QAbstractTableModel>
 #include <QVector>
 #include <QStringList>
+#include <QColor>
+
+// 定义DEBUG_PRINT宏，用于调试信息输出
+#ifndef DEBUG_PRINT
+#define DEBUG_PRINT(msg) qDebug() << "[DEBUG]" << msg
+#endif
 
 class TableModel : public QAbstractTableModel
 {
@@ -24,9 +30,13 @@ public:
     void addRows(const QVector<QStringList> &rows);
     void clear();
     void setDataWindow(const QVector<QStringList> &data, qint64 startRow); // 添加设置数据窗口的方法
-    qint64 getCurrentWindowStartRow() const; // 获取当前数据窗口的起始行
+    qint64 getCurrentWindowStartRow() const;
     void setSelectedColumns(const QVector<QString>& selectedColumns); // 设置选中的列
     const QVector<int>& getSelectedColumnIndexes() const; // 获取选中的列索引
+    
+    // 表头高亮相关方法
+    void setNewHighlightedColumns(const QVector<int>& newHighlightedColumns);
+    void clearHighlighting();
     
     // 双倍窗口新增方法
     void setModelData(const QVector<QStringList> &data, qint64 startRow); // 设置完整数据（3倍大小）
@@ -48,6 +58,7 @@ private:
     QVector<QString> m_headers;  // 表头数据
     QVector<QStringList> m_fullData; // 完整数据（3倍于可视区域）
     QVector<int> m_selectedColumnIndexes; // 选中的列索引
+    QVector<int> m_newHighlightedColumnIndexes; // 新筛选的列索引（需要高亮）
     qint64 m_fullDataStartRow; // 完整数据在文件中的起始行号
     qint64 m_visibleStartRow;  // 可视区域在完整数据中的起始行号
     qint64 m_visibleRows;      // 可视区域行数

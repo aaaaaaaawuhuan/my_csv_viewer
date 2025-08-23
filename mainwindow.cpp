@@ -17,6 +17,11 @@
 #include <QInputDialog>  // 添加输入对话框头文件
 #include <QMessageBox>   // 添加消息框头文件
 
+// 定义DEBUG_PRINT宏，如果未定义则设为qDebug()输出调试信息
+#ifndef DEBUG_PRINT
+#define DEBUG_PRINT(msg) qDebug() << "[DEBUG]" << msg
+#endif
+
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -212,9 +217,28 @@ void MainWindow::on_pushButton_filter_clicked()
     // 显示表格视图
     ui->tableView->show();
     
-    // 设置选中的列
+    // 保存当前筛选的列索引，用于后续比较
+    QVector<int> oldSelectedColumns = m_tableModel->getSelectedColumnIndexes();
+    
+    // 设置新的选中的列
     m_tableModel->setSelectedColumns(selectedColumns);
     
+    // 获取新的筛选列索引
+    QVector<int> newSelectedColumns = m_tableModel->getSelectedColumnIndexes();
+    
+    // 找出新增的筛选列（新的列索引在之前未被选中）
+    QVector<int> newHighlightedColumns;
+    for (int columnIndex : newSelectedColumns) {
+        if (!oldSelectedColumns.contains(columnIndex)) {
+            newHighlightedColumns.append(columnIndex);
+        }
+    }
+    
+    // 如果有新增的筛选列，设置表头高亮为红色
+    if (!newHighlightedColumns.isEmpty()) {
+        DEBUG_PRINT(QString("发现 %1 个新增筛选列，设置为红色高亮").arg(newHighlightedColumns.size()));
+        m_tableModel->setNewHighlightedColumns(newHighlightedColumns);
+    }
     
     endTiming(tr("筛选显示"));
 }

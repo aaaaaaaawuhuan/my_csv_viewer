@@ -59,20 +59,27 @@ QVariant TableModel::data(const QModelIndex &index, int role) const
 
 QVariant TableModel::headerData(int section, Qt::Orientation orientation, int role) const
 {
-    if (role == Qt::DisplayRole) {
-        if (orientation == Qt::Horizontal) {
-            // 确定实际的列索引
-            int actualSection = section;
-            if (!m_selectedColumnIndexes.isEmpty() && section < m_selectedColumnIndexes.size()) {
-                actualSection = m_selectedColumnIndexes[section];
-            }
-            
+    if (orientation == Qt::Horizontal) {
+        // 确定实际的列索引
+        int actualSection = section;
+        if (!m_selectedColumnIndexes.isEmpty() && section < m_selectedColumnIndexes.size()) {
+            actualSection = m_selectedColumnIndexes[section];
+        }
+        
+        if (role == Qt::DisplayRole) {
             if (actualSection < m_headers.size()) {
                 return m_headers.at(actualSection);
             }
-        } else if (orientation == Qt::Vertical) {
+        } else if (role == Qt::ForegroundRole) {
+            // 检查是否是新筛选的列，如果是则设置为红色
+            if (m_newHighlightedColumnIndexes.contains(actualSection)) {
+                DEBUG_PRINT(QString("高亮列 %1: %2").arg(actualSection).arg(m_headers.at(actualSection)));
+                return QColor(Qt::red);
+            }
+        }
+    } else if (orientation == Qt::Vertical) {
+        if (role == Qt::DisplayRole) {
             // 显示实际的行号
-            //qDebug()<<m_fullDataStartRow << m_visibleStartRow << section;
             return QString::number(m_fullDataStartRow + m_visibleStartRow + section);
         }
     }
@@ -293,6 +300,26 @@ void TableModel::setSelectedColumns(const QVector<QString>& selectedColumns)
     // 对索引进行排序以保持列的原始顺序
     std::sort(m_selectedColumnIndexes.begin(), m_selectedColumnIndexes.end());
     endResetModel();
+}
+
+void TableModel::setNewHighlightedColumns(const QVector<int>& newHighlightedColumns)
+{
+    m_newHighlightedColumnIndexes = newHighlightedColumns;
+    
+    DEBUG_PRINT(QString("设置新筛选高亮列数量: %1").arg(newHighlightedColumns.size()));
+    
+    // 通知视图水平表头数据已更改
+    emit headerDataChanged(Qt::Horizontal, 0, columnCount() - 1);
+}
+
+void TableModel::clearHighlighting()
+{
+    m_newHighlightedColumnIndexes.clear();
+    
+    DEBUG_PRINT("清除所有表头高亮");
+    
+    // 通知视图水平表头数据已更改
+    emit headerDataChanged(Qt::Horizontal, 0, columnCount() - 1);
 }
 
 const QVector<int>& TableModel::getSelectedColumnIndexes() const

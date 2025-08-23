@@ -1,0 +1,1 @@
+编译命令参考："C:\Qt6.5\Tools\CMake_64\bin\cmake.exe" --build C:/Users/Guo/Desktop/code/Qt/build-my_csv_viewer-Desktop_Qt_6_5_0_MinGW_64_bit-Debug --target all
