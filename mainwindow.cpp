@@ -263,16 +263,40 @@ void MainWindow::filterCheckboxes(const QString &text)
 {
     startTiming(tr("筛选列"));
     
-    // 根据输入的文本过滤复选框
-    QScrollArea *scrollArea = ui->dockWidgetContents->findChild<QScrollArea*>("scrollArea_select");
-    if (!scrollArea) return;
+    // 获取TabWidget
+    QTabWidget *tabWidget = ui->dockWidgetContents->findChild<QTabWidget*>("filterBookmarkTabWidget");
+    if (!tabWidget) {
+        PRINT_DEBUG("无法获取filterBookmarkTabWidget");
+        return;
+    }
     
+    // 获取筛选Tab页
+    QWidget *filterTab = tabWidget->widget(0); // 假设筛选是第一个tab
+    if (!filterTab) {
+        PRINT_DEBUG("无法获取筛选Tab页");
+        return;
+    }
+    
+    // 查找ScrollArea
+    QScrollArea *scrollArea = filterTab->findChild<QScrollArea*>("scrollArea_select");
+    if (!scrollArea) {
+        PRINT_DEBUG("无法获取ScrollArea");
+        return;
+    }
+    
+    // 获取滚动区域的内容部件
     QWidget *contentWidget = scrollArea->widget();
-    if (!contentWidget) return;
+    if (!contentWidget) {
+        PRINT_DEBUG("无法获取contentWidget");
+        return;
+    }
     
     // 获取QTreeWidget控件
-    QTreeWidget *treeWidget = contentWidget->findChild<QTreeWidget*>();
-    if (!treeWidget) return;
+    QTreeWidget *treeWidget = contentWidget->findChild<QTreeWidget*>("columnTreeWidget");
+    if (!treeWidget) {
+        PRINT_DEBUG("无法获取columnTreeWidget");
+        return;
+    }
     
     // 根据输入文本过滤树项
     for (int i = 0; i < treeWidget->topLevelItemCount(); ++i) {
@@ -299,17 +323,40 @@ void MainWindow::toggleSelectAll(bool select)
 {
     startTiming(select ? tr("全选") : tr("清空"));
     
-    // 查找scrollArea_select控件
-    QScrollArea *scrollArea = ui->dockWidgetContents->findChild<QScrollArea*>("scrollArea_select");
-    if (!scrollArea) return;
+    // 获取TabWidget
+    QTabWidget *tabWidget = ui->dockWidgetContents->findChild<QTabWidget*>("filterBookmarkTabWidget");
+    if (!tabWidget) {
+        PRINT_DEBUG("无法获取filterBookmarkTabWidget");
+        return;
+    }
+    
+    // 获取筛选Tab页
+    QWidget *filterTab = tabWidget->widget(0); // 假设筛选是第一个tab
+    if (!filterTab) {
+        PRINT_DEBUG("无法获取筛选Tab页");
+        return;
+    }
+    
+    // 查找ScrollArea
+    QScrollArea *scrollArea = filterTab->findChild<QScrollArea*>("scrollArea_select");
+    if (!scrollArea) {
+        PRINT_DEBUG("无法获取ScrollArea");
+        return;
+    }
     
     // 获取滚动区域的内容部件
     QWidget *contentWidget = scrollArea->widget();
-    if (!contentWidget) return;
+    if (!contentWidget) {
+        PRINT_DEBUG("无法获取contentWidget");
+        return;
+    }
     
     // 获取QTreeWidget控件
-    QTreeWidget *treeWidget = contentWidget->findChild<QTreeWidget*>();
-    if (!treeWidget) return;
+    QTreeWidget *treeWidget = contentWidget->findChild<QTreeWidget*>("columnTreeWidget");
+    if (!treeWidget) {
+        PRINT_DEBUG("无法获取columnTreeWidget");
+        return;
+    }
     
     // 获取所有可见的树项并设置它们的选中状态
     for (int i = 0; i < treeWidget->topLevelItemCount(); ++i) {
@@ -855,55 +902,113 @@ void MainWindow::setupBookmarkUI()
         return;
     }
     
-    // 获取当前布局
-    QVBoxLayout *currentLayout = qobject_cast<QVBoxLayout*>(dockWidgetContents->layout());
-    if (!currentLayout) {
-        PRINT_DEBUG("无法获取当前布局");
-        return;
-    }
-    
-    // 保存当前布局中的所有控件
-    QList<QWidget*> oldWidgets;
-    for (int i = 0; i < currentLayout->count(); ++i) {
-        QLayoutItem *item = currentLayout->itemAt(i);
-        if (item && item->widget()) {
-            oldWidgets.append(item->widget());
-            currentLayout->removeItem(item);
+    // 清除当前所有布局和控件
+    QLayout *oldLayout = dockWidgetContents->layout();
+    if (oldLayout) {
+        QLayoutItem *item;
+        while ((item = oldLayout->takeAt(0)) != nullptr) {
+            if (item->widget()) {
+                delete item->widget();
+            }
+            delete item;
         }
+        delete oldLayout;
     }
     
-    // 创建TabWidget
+    // 创建新的主布局
+    QVBoxLayout *mainLayout = new QVBoxLayout(dockWidgetContents);
+    dockWidgetContents->setLayout(mainLayout);
+    
+    // 创建TabWidget作为侧边栏的主要容器
     QTabWidget *tabWidget = new QTabWidget(dockWidgetContents);
     tabWidget->setObjectName("filterBookmarkTabWidget");
+    tabWidget->setTabPosition(QTabWidget::North); // 设置标签位置在顶部
+    tabWidget->setDocumentMode(true); // 启用文档模式，使标签栏更紧凑
     
     // 创建筛选面板Tab页
     QWidget *filterTab = new QWidget();
     QVBoxLayout *filterLayout = new QVBoxLayout(filterTab);
+    filterLayout->setContentsMargins(5, 5, 5, 5); // 设置内边距
     
-    // 将原来的筛选控件添加到筛选Tab页
-    for (QWidget *widget : oldWidgets) {
-        if (widget) {
-            filterLayout->addWidget(widget);
-        }
-    }
+    // 重新创建筛选面板控件，确保干净的UI
+    QFrame *frame_button = new QFrame(filterTab);
+    frame_button->setMaximumSize(QSize(16777215, 100));
+    frame_button->setFrameShape(QFrame::Box);
+    frame_button->setFrameShadow(QFrame::Raised);
+    QGridLayout *gridLayout = new QGridLayout(frame_button);
+    
+    QPushButton *pushButton_all = new QPushButton(tr("全选"), frame_button);
+    gridLayout->addWidget(pushButton_all, 0, 0);
+    connect(pushButton_all, &QPushButton::clicked, this, &MainWindow::on_pushButton_all_clicked);
+    
+    QPushButton *pushButton_clear = new QPushButton(tr("清空"), frame_button);
+    gridLayout->addWidget(pushButton_clear, 0, 1);
+    connect(pushButton_clear, &QPushButton::clicked, this, &MainWindow::on_pushButton_clear_clicked);
+    
+    QPushButton *pushButton_filter = new QPushButton(tr("筛选"), frame_button);
+    gridLayout->addWidget(pushButton_filter, 1, 0, 1, 2);
+    connect(pushButton_filter, &QPushButton::clicked, this, &MainWindow::on_pushButton_filter_clicked);
+    
+    // 添加列名输入框
+    QLineEdit *lineEdit_clowmn_name = new QLineEdit(frame_button);
+    lineEdit_clowmn_name->setObjectName("lineEdit_clowmn_name");
+    lineEdit_clowmn_name->setPlaceholderText(tr("输入列名"));
+    gridLayout->addWidget(lineEdit_clowmn_name, 2, 0, 1, 2);
+    connect(lineEdit_clowmn_name, &QLineEdit::textChanged, this, &MainWindow::on_lineEdit_clowmn_name_textChanged);
+
+    filterLayout->addWidget(frame_button);
+    
+    // 添加列选择区域
+    QScrollArea *scrollArea = new QScrollArea(filterTab);
+    scrollArea->setObjectName("scrollArea_select"); // 设置对象名称
+    scrollArea->setWidgetResizable(true);
+    QWidget *scrollAreaWidgetContents = new QWidget();
+    scrollAreaWidgetContents->setObjectName("scrollAreaWidgetContents");
+    QVBoxLayout *verticalLayout_2 = new QVBoxLayout(scrollAreaWidgetContents);
+    verticalLayout_2->setContentsMargins(5, 5, 5, 5);
+    
+    // 添加标签
+    QLabel *label = new QLabel(tr("选择要显示的列"), scrollAreaWidgetContents);
+    verticalLayout_2->addWidget(label);
+    
+    // 创建QTreeWidget来显示列选项
+    QTreeWidget *treeWidget = new QTreeWidget(scrollAreaWidgetContents);
+    treeWidget->setObjectName("columnTreeWidget"); // 设置对象名称
+    treeWidget->setHeaderLabel(tr("选择要显示的列"));
+    treeWidget->setSelectionMode(QAbstractItemView::NoSelection);
+    treeWidget->setFocusPolicy(Qt::NoFocus);
+    treeWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    treeWidget->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    verticalLayout_2->addWidget(treeWidget);
+    
+    scrollArea->setWidget(scrollAreaWidgetContents);
+    filterLayout->addWidget(scrollArea);
     
     tabWidget->addTab(filterTab, tr("筛选"));
     
     // 创建书签Tab页
     QWidget *bookmarkTab = new QWidget();
     QVBoxLayout *bookmarkLayout = new QVBoxLayout(bookmarkTab);
+    bookmarkLayout->setContentsMargins(5, 5, 5, 5); // 设置内边距
     
-    QLabel *bookmarkLabel = new QLabel(tr("书签列表: "), bookmarkTab);
+    // 添加标题
+    QLabel *bookmarkLabel = new QLabel(tr("书签列表"), bookmarkTab);
+    QFont font = bookmarkLabel->font();
+    font.setBold(true);
+    bookmarkLabel->setFont(font);
     bookmarkLayout->addWidget(bookmarkLabel);
     
     // 创建书签列表
     QListWidget *bookmarkListWidget = new QListWidget(bookmarkTab);
     bookmarkListWidget->setObjectName("bookmarkListWidget");
+    bookmarkListWidget->setAlternatingRowColors(true); // 启用交替行颜色
     connect(bookmarkListWidget, &QListWidget::itemDoubleClicked, this, &MainWindow::onBookmarkItemDoubleClicked);
-    bookmarkLayout->addWidget(bookmarkListWidget);
+    bookmarkLayout->addWidget(bookmarkListWidget, 1); // 占据剩余空间
     
     // 创建书签操作按钮
     QHBoxLayout *buttonLayout = new QHBoxLayout();
+    buttonLayout->setContentsMargins(0, 5, 0, 0); // 设置上边距
+    
     QPushButton *addButton = new QPushButton(tr("添加当前行为书签"), bookmarkTab);
     connect(addButton, &QPushButton::clicked, this, &MainWindow::onAddBookmarkTriggered);
     buttonLayout->addWidget(addButton);
@@ -917,9 +1022,9 @@ void MainWindow::setupBookmarkUI()
     tabWidget->addTab(bookmarkTab, tr("书签"));
     
     // 将TabWidget添加到主布局
-    currentLayout->addWidget(tabWidget);
+    mainLayout->addWidget(tabWidget);
     
-    PRINT_DEBUG("书签UI设置完成");
+    PRINT_DEBUG("书签UI设置完成：侧边栏已改造为包含筛选和书签两个Tab页的结构");
 }
 
 void MainWindow::updateBookmarkList()
