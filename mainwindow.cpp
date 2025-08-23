@@ -97,6 +97,17 @@ MainWindow::MainWindow(QWidget *parent)
     
     // 初始化状态栏信息
     statusBar()->showMessage(tr("就绪"));
+    
+    // 初始化书签UI
+    setupBookmarkUI();
+    
+    // 初始化右键菜单
+    m_contextMenu = new QMenu(this);
+    QAction *addBookmarkAction = new QAction(tr("添加当前行为书签"), this);
+    connect(addBookmarkAction, &QAction::triggered, this, &MainWindow::onAddBookmarkTriggered);
+    m_contextMenu->addAction(addBookmarkAction);
+    ui->tableView->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(ui->tableView, &QTableView::customContextMenuRequested, this, &MainWindow::showContextMenu);
 }
 
 MainWindow::~MainWindow()
@@ -236,7 +247,7 @@ void MainWindow::on_pushButton_filter_clicked()
     
     // 如果有新增的筛选列，设置表头高亮为红色
     if (!newHighlightedColumns.isEmpty()) {
-        DEBUG_PRINT(QString("发现 %1 个新增筛选列，设置为红色高亮").arg(newHighlightedColumns.size()));
+        PRINT_DEBUG(QString("发现 %1 个新增筛选列，设置为红色高亮").arg(newHighlightedColumns.size()));
         m_tableModel->setNewHighlightedColumns(newHighlightedColumns);
     }
     
@@ -779,6 +790,25 @@ void MainWindow::PreloadedDataReceived(const struct CsvRowData &rowData, qint64 
 }
 
 
+void MainWindow::contextMenuEvent(QContextMenuEvent *event)
+{
+    // 调用showContextMenu方法显示上下文菜单
+    showContextMenu(event->pos());
+}
+
+void MainWindow::showContextMenu(const QPoint &pos)
+{
+    // 将视图坐标转换为全局坐标
+    QPoint globalPos = ui->tableView->viewport()->mapToGlobal(pos);
+    
+    // 获取右键点击的行
+    QModelIndex index = ui->tableView->indexAt(pos);
+    if (index.isValid()) {
+        // 显示菜单
+        m_contextMenu->exec(globalPos);
+    }
+}
+
 void MainWindow::on_action_goto_row_triggered()
 {
     if (m_totalRows <= 0) {
@@ -806,9 +836,203 @@ void MainWindow::gotoRow(qint64 row)
         return;
     }
     
+    PRINT_DEBUG(QString("跳转到行: %1 (0基索引: %2)").arg(row).arg(targetRow));
+    
     // 设置滚动条位置为目标行
+    m_internalScrollBarChange = true; // 防止触发重新加载
     ui->verticalScrollBar->setValue(static_cast<int>(targetRow));
     
     // 直接处理大范围滚动以加载目标行数据
     handleLargeScroll(targetRow);
+}
+
+void MainWindow::setupBookmarkUI()
+{
+    // 获取筛选面板的内容部件
+    QWidget *dockWidgetContents = ui->dockWidgetContents;
+    if (!dockWidgetContents) {
+        PRINT_DEBUG("无法获取dockWidgetContents");
+        return;
+    }
+    
+    // 获取当前布局
+    QVBoxLayout *currentLayout = qobject_cast<QVBoxLayout*>(dockWidgetContents->layout());
+    if (!currentLayout) {
+        PRINT_DEBUG("无法获取当前布局");
+        return;
+    }
+    
+    // 保存当前布局中的所有控件
+    QList<QWidget*> oldWidgets;
+    for (int i = 0; i < currentLayout->count(); ++i) {
+        QLayoutItem *item = currentLayout->itemAt(i);
+        if (item && item->widget()) {
+            oldWidgets.append(item->widget());
+            currentLayout->removeItem(item);
+        }
+    }
+    
+    // 创建TabWidget
+    QTabWidget *tabWidget = new QTabWidget(dockWidgetContents);
+    tabWidget->setObjectName("filterBookmarkTabWidget");
+    
+    // 创建筛选面板Tab页
+    QWidget *filterTab = new QWidget();
+    QVBoxLayout *filterLayout = new QVBoxLayout(filterTab);
+    
+    // 将原来的筛选控件添加到筛选Tab页
+    for (QWidget *widget : oldWidgets) {
+        if (widget) {
+            filterLayout->addWidget(widget);
+        }
+    }
+    
+    tabWidget->addTab(filterTab, tr("筛选"));
+    
+    // 创建书签Tab页
+    QWidget *bookmarkTab = new QWidget();
+    QVBoxLayout *bookmarkLayout = new QVBoxLayout(bookmarkTab);
+    
+    QLabel *bookmarkLabel = new QLabel(tr("书签列表: "), bookmarkTab);
+    bookmarkLayout->addWidget(bookmarkLabel);
+    
+    // 创建书签列表
+    QListWidget *bookmarkListWidget = new QListWidget(bookmarkTab);
+    bookmarkListWidget->setObjectName("bookmarkListWidget");
+    connect(bookmarkListWidget, &QListWidget::itemDoubleClicked, this, &MainWindow::onBookmarkItemDoubleClicked);
+    bookmarkLayout->addWidget(bookmarkListWidget);
+    
+    // 创建书签操作按钮
+    QHBoxLayout *buttonLayout = new QHBoxLayout();
+    QPushButton *addButton = new QPushButton(tr("添加当前行为书签"), bookmarkTab);
+    connect(addButton, &QPushButton::clicked, this, &MainWindow::onAddBookmarkTriggered);
+    buttonLayout->addWidget(addButton);
+    
+    QPushButton *removeButton = new QPushButton(tr("移除选中书签"), bookmarkTab);
+    connect(removeButton, &QPushButton::clicked, this, &MainWindow::onRemoveBookmarkTriggered);
+    buttonLayout->addWidget(removeButton);
+    
+    bookmarkLayout->addLayout(buttonLayout);
+    
+    tabWidget->addTab(bookmarkTab, tr("书签"));
+    
+    // 将TabWidget添加到主布局
+    currentLayout->addWidget(tabWidget);
+    
+    PRINT_DEBUG("书签UI设置完成");
+}
+
+void MainWindow::updateBookmarkList()
+{
+    // 获取书签列表控件
+    QTabWidget *tabWidget = ui->dockWidgetContents->findChild<QTabWidget*>("filterBookmarkTabWidget");
+    if (!tabWidget) {
+        PRINT_DEBUG("无法获取tabWidget");
+        return;
+    }
+    
+    QListWidget *bookmarkListWidget = tabWidget->findChild<QListWidget*>("bookmarkListWidget");
+    if (!bookmarkListWidget) {
+        PRINT_DEBUG("无法获取bookmarkListWidget");
+        return;
+    }
+    
+    // 清空书签列表
+    bookmarkListWidget->clear();
+    
+    // 重新填充书签列表
+    for (auto it = m_bookmarks.constBegin(); it != m_bookmarks.constEnd(); ++it) {
+        QString bookmarkName = it.key();
+        qint64 rowNumber = it.value();
+        
+        QString displayText = QString("%1 (行 %2)").arg(bookmarkName).arg(rowNumber);
+        QListWidgetItem *item = new QListWidgetItem(displayText, bookmarkListWidget);
+        item->setData(Qt::UserRole, rowNumber); // 存储行号数据
+    }
+    
+    PRINT_DEBUG(QString("书签列表已更新，共 %1 个书签").arg(m_bookmarks.size()));
+}
+
+void MainWindow::onAddBookmarkTriggered()
+{
+    if (m_totalRows <= 0) {
+        QMessageBox::information(this, tr("提示"), tr("请先打开一个CSV文件"));
+        return;
+    }
+    
+    // 获取当前选中的行或滚动条位置对应的行
+    int currentRow = ui->verticalScrollBar->value() + 1; // 转换为1基行号
+    
+    // 弹出对话框让用户输入书签名称
+    bool ok;
+    QString bookmarkName = QInputDialog::getText(this, tr("添加书签"),
+                                               tr("请输入书签名称:"),
+                                               QLineEdit::Normal,
+                                               QString(tr("行 %1")).arg(currentRow),
+                                               &ok);
+    
+    if (ok && !bookmarkName.isEmpty()) {
+        // 添加书签到映射中
+        m_bookmarks[bookmarkName] = currentRow;
+        
+        PRINT_DEBUG(QString("添加书签: %1 -> 行 %2").arg(bookmarkName).arg(currentRow));
+        
+        // 更新书签列表
+        updateBookmarkList();
+    }
+}
+
+void MainWindow::onBookmarkItemDoubleClicked(QListWidgetItem *item)
+{
+    if (!item) {
+        return;
+    }
+    
+    // 获取存储的行号
+    qint64 rowNumber = item->data(Qt::UserRole).toLongLong();
+    
+    PRINT_DEBUG(QString("双击书签，跳转到行: %1").arg(rowNumber));
+    
+    // 跳转到对应行
+    gotoRow(rowNumber);
+}
+
+void MainWindow::onRemoveBookmarkTriggered()
+{
+    // 获取书签列表控件
+    QTabWidget *tabWidget = ui->dockWidgetContents->findChild<QTabWidget*>("filterBookmarkTabWidget");
+    if (!tabWidget) {
+        PRINT_DEBUG("无法获取tabWidget");
+        return;
+    }
+    
+    QListWidget *bookmarkListWidget = tabWidget->findChild<QListWidget*>("bookmarkListWidget");
+    if (!bookmarkListWidget) {
+        PRINT_DEBUG("无法获取bookmarkListWidget");
+        return;
+    }
+    
+    // 获取选中的项
+    QListWidgetItem *selectedItem = bookmarkListWidget->currentItem();
+    if (!selectedItem) {
+        QMessageBox::information(this, tr("提示"), tr("请先选择要移除的书签"));
+        return;
+    }
+    
+    // 获取书签名称（去掉行号信息）
+    QString itemText = selectedItem->text();
+    int pos = itemText.indexOf(" (");
+    QString bookmarkName = (pos > 0) ? itemText.left(pos) : itemText;
+    
+    // 从映射中移除书签
+    if (m_bookmarks.contains(bookmarkName)) {
+        m_bookmarks.remove(bookmarkName);
+        PRINT_DEBUG(QString("移除书签: %1").arg(bookmarkName));
+        
+        // 从列表中移除项
+        delete selectedItem;
+        
+        // 更新书签列表
+        updateBookmarkList();
+    }
 }

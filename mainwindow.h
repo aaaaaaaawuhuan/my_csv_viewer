@@ -13,6 +13,15 @@
 #include <QMap>
 #include <QTimer>
 #include <QTreeWidget>
+#include <QMenu>
+#include <QContextMenuEvent>
+#include <QListWidget>
+#include <QTabWidget>
+
+// 调试宏定义，可通过注释掉这行来关闭所有调试信息
+#define DEBUG_PRINT true
+
+#define PRINT_DEBUG(msg) if (DEBUG_PRINT) qDebug() << msg;
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -54,11 +63,16 @@ private slots:
     void onDelayedLoad(); // 添加延迟加载槽函数
     void onPreloadTimeout(); // 添加预加载超时槽函数
     void resetScrollBarColor(); // 添加重置滚动条颜色槽函数
+    void onBookmarkItemDoubleClicked(QListWidgetItem *item);
+    void onAddBookmarkTriggered();
+    void onRemoveBookmarkTriggered();
 
 protected:
     void resizeEvent(QResizeEvent *event) override; // 添加窗口大小改变事件处理
     void wheelEvent(QWheelEvent *event) override;   // 添加鼠标滚轮事件处理
     void keyPressEvent(QKeyEvent *event) override;  // 添加键盘事件处理
+    void contextMenuEvent(QContextMenuEvent *event) override;
+    void showContextMenu(const QPoint &pos);
 
 private:
     Ui::MainWindow *ui;
@@ -78,6 +92,8 @@ private:
     qint64 m_lastScrollPosition; // 上次滚动位置
     bool m_internalScrollBarChange; // 防止滚动条信号循环调用
     int m_defaultRowHeight; // 默认行高
+    QMap<QString, qint64> m_bookmarks; // 书签映射，键为书签名称，值为行号
+    QMenu *m_contextMenu; // 右键菜单
     
     // 添加新函数
     ScrollType detectScrollType(qint64 oldPosition, qint64 newPosition); // 滚动类型识别
@@ -95,6 +111,8 @@ private:
     int getUniformRowHeight() const; // 获取统一行高
     void PreloadedDataReceived(const struct CsvRowData &rowData, qint64 startRow); // 添加预加载数据函数
     void gotoRow(qint64 row); // 添加跳转到指定行的函数
+    void setupBookmarkUI(); // 设置书签UI
+    void updateBookmarkList(); // 更新书签列表显示
 };
 
 #endif // MAINWINDOW_H
