@@ -9,7 +9,6 @@
 #include <QString>
 #include <QThread>
 #include <QVector>
-#include <QElapsedTimer>
 #include <QMap>
 #include <QTimer>
 #include <QTreeWidget>
@@ -17,6 +16,7 @@
 #include <QContextMenuEvent>
 #include <QListWidget>
 #include <QTabWidget>
+#include "statusmanager.h"
 
 // 调试宏定义，可通过注释掉这行来关闭所有调试信息
 #define DEBUG_PRINT true
@@ -81,8 +81,6 @@ private:
     TableModel *m_tableModel;  // 添加数据模型
     QVector<QString> m_headers; // 保存表头信息
     QThread *m_workerThread;
-    QElapsedTimer m_timer;  // 用于计时的计时器
-    QMap<QString, qint64> m_performanceData;  // 存储性能数据
     QTimer *m_delayedLoadTimer; // 延迟加载定时器
     QTimer *m_scrollBarResetTimer; // 滚动条颜色重置定时器
     QTimer *m_preloadTimer; // 预加载定时器
@@ -94,6 +92,7 @@ private:
     int m_defaultRowHeight; // 默认行高
     QMap<QString, qint64> m_bookmarks; // 书签映射，键为书签名称，值为行号
     QMenu *m_contextMenu; // 右键菜单
+    StatusManager *m_statusManager; // 状态栏管理器
     
     // 添加新函数
     ScrollType detectScrollType(qint64 oldPosition, qint64 newPosition); // 滚动类型识别
@@ -103,9 +102,6 @@ private:
     void generateColumnCheckboxes(const QVector<QString> &headers);
     void toggleSelectAll(bool select);
     void filterCheckboxes(const QString &text);
-    void startTiming(const QString &operation);
-    void endTiming(const QString &operation);
-    void updateStatusBarWithTimingInfo();
     void updateScrollBarRange(); // 更新滚动条范围
     void updateVisibleRows(); // 更新可视行数
     int getUniformRowHeight() const; // 获取统一行高

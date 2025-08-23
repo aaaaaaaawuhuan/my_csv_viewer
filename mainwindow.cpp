@@ -39,8 +39,12 @@ MainWindow::MainWindow(QWidget *parent)
     , m_lastScrollPosition(0) // 初始化上次滚动位置
     , m_internalScrollBarChange(false) // 初始化滚动条循环调用标志
     , m_defaultRowHeight(25) // 默认行高25像素
+    , m_statusManager(nullptr)
 {
     ui->setupUi(this);
+    
+    // 在setupUi之后初始化StatusManager，确保statusBar()返回有效的指针
+    m_statusManager = new StatusManager(statusBar());
     
     // 将数据模型设置到tableView中
     ui->tableView->setModel(m_tableModel);
@@ -116,52 +120,21 @@ MainWindow::~MainWindow()
     m_workerThread->wait();
     delete m_csvReader;
     delete m_workerThread;
+    delete m_statusManager;
     delete ui;
 }
 
-void MainWindow::startTiming(const QString &operation)
-{
-    m_timer.start();
-    // 在状态栏显示正在执行的操作
-    statusBar()->showMessage(tr("正在执行%1...").arg(operation));
-}
-
-void MainWindow::endTiming(const QString &operation)
-{
-    if (m_timer.isValid()) {
-        qint64 elapsed = m_timer.elapsed();
-        m_performanceData[operation] = elapsed;
-        // 更新状态栏显示耗时信息
-        updateStatusBarWithTimingInfo();
-    }
-}
-
-void MainWindow::updateStatusBarWithTimingInfo()
-{
-    QString message = tr("就绪");
-    if (!m_performanceData.isEmpty()) {
-        // 显示最近几次操作的耗时信息
-        QString timingInfo;
-        for (auto it = m_performanceData.begin(); it != m_performanceData.end(); ++it) {
-            if (!timingInfo.isEmpty()) timingInfo += ", ";
-            timingInfo += QString("%1: %2ms").arg(it.key()).arg(it.value());
-        }
-        message = timingInfo;
-    }
-    statusBar()->showMessage(message);
-}
+// StatusManager替代了这些方法
 
 void MainWindow::on_action_open_triggered()
 {
-    startTiming(tr("打开文件对话框"));
     QString fileName = QFileDialog::getOpenFileName(this,tr("Open CSV File"),"",tr("CSV Files (*.csv)"));
-    endTiming(tr("打开文件对话框"));
 
     if(!fileName.isEmpty())
     {
         m_fileName = fileName;
         // 发送文件名给CsvReader进行初始化
-        startTiming(tr("文件初始化"));
+        m_statusManager->startTiming(tr("文件初始化"));
         emit initCsvReader(fileName);
         // 注意：这里不会立即结束计时，因为是异步操作
         // 实际的计时结束会在onInitializationDataReceived中处理
@@ -196,7 +169,7 @@ void MainWindow::on_pushButton_clear_clicked()
 
 void MainWindow::on_pushButton_filter_clicked()
 {
-    startTiming(tr("筛选显示"));
+    m_statusManager->startTiming(tr("筛选显示"));
     
     // 获取选中的列
     QScrollArea *scrollArea = ui->dockWidgetContents->findChild<QScrollArea*>("scrollArea_select");
@@ -221,7 +194,7 @@ void MainWindow::on_pushButton_filter_clicked()
     // 检查是否有选中的列
     if (selectedColumns.isEmpty()) {
         QMessageBox::warning(this, tr("警告"), tr("请至少选择一列进行显示"));
-        endTiming(tr("筛选显示"));
+        m_statusManager->endTiming(tr("筛选显示"));
         return;
     }
 
@@ -251,7 +224,7 @@ void MainWindow::on_pushButton_filter_clicked()
         m_tableModel->setNewHighlightedColumns(newHighlightedColumns);
     }
     
-    endTiming(tr("筛选显示"));
+    m_statusManager->endTiming(tr("筛选显示"));
 }
 
 void MainWindow::on_lineEdit_clowmn_name_textChanged(const QString &text)
@@ -261,7 +234,7 @@ void MainWindow::on_lineEdit_clowmn_name_textChanged(const QString &text)
 
 void MainWindow::filterCheckboxes(const QString &text)
 {
-    startTiming(tr("筛选列"));
+    m_statusManager->startTiming(tr("筛选列"));
     
     // 获取TabWidget
     QTabWidget *tabWidget = ui->dockWidgetContents->findChild<QTabWidget*>("filterBookmarkTabWidget");
@@ -315,13 +288,13 @@ void MainWindow::filterCheckboxes(const QString &text)
         }
     }
     
-    endTiming(tr("筛选列"));
+    m_statusManager->endTiming(tr("筛选列"));
 }
 
 
 void MainWindow::toggleSelectAll(bool select)
 {
-    startTiming(select ? tr("全选") : tr("清空"));
+    m_statusManager->startTiming(select ? tr("全选") : tr("清空"));
     
     // 获取TabWidget
     QTabWidget *tabWidget = ui->dockWidgetContents->findChild<QTabWidget*>("filterBookmarkTabWidget");
@@ -366,27 +339,24 @@ void MainWindow::toggleSelectAll(bool select)
         item->setCheckState(0, select ? Qt::Checked : Qt::Unchecked);
     }
     
-    endTiming(select ? tr("全选") : tr("清空"));
+    m_statusManager->endTiming(select ? tr("全选") : tr("清空"));
 }
 
 void MainWindow::onInitializationDataReceived(const QVector<QString> &headers)
 {
     // 结束文件初始化计时
-    endTiming(tr("文件初始化"));
+    m_statusManager->endTiming(tr("文件初始化"));
     
     qDebug() << "初始化数据接收: 表头数量=" << headers.size() << ", 总行数=" << m_csvReader->getTotalRows();
     
     // 显示CsvReader的性能数据
     const QMap<QString, qint64> &csvReaderPerformanceData = m_csvReader->getPerformanceData();
     if (!csvReaderPerformanceData.isEmpty()) {
-        // 将CsvReader的性能数据合并到主窗口的性能数据中
-        for (auto it = csvReaderPerformanceData.begin(); it != csvReaderPerformanceData.end(); ++it) {
-            m_performanceData["CsvReader-" + it.key()] = it.value();
-        }
-        updateStatusBarWithTimingInfo();
+        // 将CsvReader的性能数据合并到状态栏管理器中
+        m_statusManager->mergePerformanceData("CsvReader", csvReaderPerformanceData);
     }
     
-    startTiming(tr("生成筛选面板"));
+    m_statusManager->startTiming(tr("生成筛选面板"));
     
     // 显示dockWidget
     ui->dockWidget->show();
@@ -421,7 +391,7 @@ void MainWindow::onInitializationDataReceived(const QVector<QString> &headers)
         qDebug() << "初始化TableView滚动条: 范围0-" << (m_totalRows - m_visibleRows) << ", 步长=" << m_visibleRows;
     }
     
-    endTiming(tr("生成筛选面板"));
+    m_statusManager->endTiming(tr("生成筛选面板"));
 }
 
 void MainWindow::onRowsDataReceived(const struct CsvRowData &rowData, qint64 startRow)
@@ -435,7 +405,7 @@ void MainWindow::onRowsDataReceived(const struct CsvRowData &rowData, qint64 sta
     // 1. 清除当前显示的数据，但保留表头
     m_tableModel->clearDataOnly(); // 只清空数据部分
     
-    startTiming(tr("处理数据行"));
+    m_statusManager->startTiming(tr("处理数据行"));
     
     qDebug() << "接收到数据行: startRow=" << startRow << ", 数据行数=" << rowData.rows.size();
     
@@ -461,29 +431,23 @@ void MainWindow::onRowsDataReceived(const struct CsvRowData &rowData, qint64 sta
         qDebug() << "已滚动到第一行数据";
     }
     
-    // 更新状态栏显示当前数据位置
-    QString positionInfo = QString("显示行 %1-%2 (共%3行)")
-        .arg(startRow + 1)
-        .arg(startRow + rowData.rows.size())
-        .arg(m_totalRows);
-    statusBar()->showMessage(positionInfo);
+    // 更新当前起始行
+    m_currentStartRow = startRow;
     
     // 显示CsvReader的性能数据
     if (!rowData.performanceData.isEmpty()) {
-        // 将CsvReader的性能数据合并到主窗口的性能数据中
-        for (auto it = rowData.performanceData.begin(); it != rowData.performanceData.end(); ++it) {
-            m_performanceData["CsvReader-" + it.key()] = it.value();
-        }
-        updateStatusBarWithTimingInfo();
+        // 将CsvReader的性能数据合并到状态栏管理器中
+        m_statusManager->mergePerformanceData("CsvReader", rowData.performanceData);
     }
     
-    endTiming(tr("处理数据行"));
+    // 更新状态栏信息
+    m_statusManager->updateFileStatus(m_fileName, m_currentStartRow, m_visibleRows, m_totalRows);
+    
+    m_statusManager->endTiming(tr("处理数据行"));
 }
 
 void MainWindow::generateColumnCheckboxes(const QVector<QString> &headers)
 {
-    startTiming(tr("创建复选框"));
-    
     // 查找scrollArea_select控件
     QScrollArea *scrollArea = ui->dockWidgetContents->findChild<QScrollArea*>("scrollArea_select");
     if (!scrollArea) return;
@@ -536,8 +500,6 @@ void MainWindow::generateColumnCheckboxes(const QVector<QString> &headers)
     treeWidget->updateGeometry();
     contentWidget->updateGeometry();
     scrollArea->update();
-    
-    endTiming(tr("创建复选框"));
 }
 
 void MainWindow::onVerticalScrollBarValueChanged(int value)
@@ -558,6 +520,12 @@ void MainWindow::onVerticalScrollBarValueChanged(int value)
     }
 
     m_lastScrollPosition = currentValue;
+    
+    // 更新当前起始行
+    m_currentStartRow = currentValue;
+    
+    // 更新状态栏信息
+    m_statusManager->updateFileStatus(m_fileName, m_currentStartRow, m_visibleRows, m_totalRows);
 }
 
 void MainWindow::resizeEvent(QResizeEvent *event)
@@ -828,11 +796,11 @@ void MainWindow::PreloadedDataReceived(const struct CsvRowData &rowData, qint64 
     
     // 显示CsvReader的性能数据
     if (!rowData.performanceData.isEmpty()) {
-        // 将CsvReader的性能数据合并到主窗口的性能数据中
-        for (auto it = rowData.performanceData.begin(); it != rowData.performanceData.end(); ++it) {
-            m_performanceData["预加载-" + it.key()] = it.value();
-        }
-        updateStatusBarWithTimingInfo();
+        // 将CsvReader的性能数据合并到StatusManager
+        m_statusManager->mergePerformanceData("预加载", rowData.performanceData);
+        
+        // 更新状态栏信息
+        m_statusManager->updateFileStatus(m_fileName, m_currentStartRow, m_visibleRows, m_totalRows);
     }
 }
 

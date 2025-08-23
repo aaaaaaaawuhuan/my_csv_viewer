@@ -21,6 +21,8 @@ set(PROJECT_SOURCES
         tablemodel.cpp
         tablemodel.h
         csvreader.cpp
+        statusmanager.h
+        statusmanager.cpp
 )
 
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
