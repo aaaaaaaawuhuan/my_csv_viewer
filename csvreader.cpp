@@ -125,8 +125,6 @@ CsvInitializationData CsvReader::getInitializeData(const QString &fileName)
     CsvInitializationData data;
     data.totalRows = 0;
     
-    startTiming("读取文件");
-    
     QFile file(fileName);
     if (!file.open(QIODevice::ReadOnly)) { // 移除Text标志以正确处理位置
         qDebug() << "Cannot open file:" << fileName;
@@ -189,16 +187,12 @@ CsvInitializationData CsvReader::getInitializeData(const QString &fileName)
     // 复制性能数据
     data.performanceData = m_performanceData;
     
-    endTiming("读取文件");
-    
     return data;
 }
 
 CsvRowData CsvReader::getRowsData(const QString &fileName, qint64 startRow, qint64 rowCount)
 {
     CsvRowData data;
-    
-    startTiming(QString("读取数据行 %1-%2").arg(startRow).arg(startRow + rowCount - 1));
     
     // 检查是否需要重新初始化（文件是否改变）
     if (isFileChanged(fileName) || m_initData.rowPositions.isEmpty()) {
@@ -246,8 +240,6 @@ CsvRowData CsvReader::getRowsData(const QString &fileName, qint64 startRow, qint
     
     // 复制性能数据
     data.performanceData = m_performanceData;
-    
-    endTiming(QString("读取数据行 %1-%2").arg(startRow).arg(startRow + rowCount - 1));
     
     return data;
 }
@@ -298,13 +290,11 @@ QStringList CsvReader::parseCsvLine(const QString &line, const QString &delimite
 
 void CsvReader::init(const QString &fileName)
 {
-    startTiming("初始化");
     m_FileName = fileName;
     // 获取初始化数据
     m_initData = getInitializeData(fileName);
     // 发送表头数据给主窗口
     emit initializationDataReady(m_initData.headers);
-    endTiming("初始化");
 }
 
 bool CsvReader::isFileChanged(const QString &fileName)
