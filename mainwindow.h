@@ -106,6 +106,13 @@ private:
     
     // 当前右键点击的位置信息
     QPoint m_lastContextMenuPos; // 状态栏管理器
+
+
+    qint64 m_lastScrollTime = 0;           // 上次滚动时间（毫秒）
+    qint64 m_rollingDistance = 0;          // 短时间内累计滚动距离
+    qint64 m_rollingStartTime = 0;         // 累计滚动的起始时间
+    static constexpr qint64 ROLLING_WINDOW = 1000; // 时间窗口：300ms
+    static constexpr qint64 FAST_SCROLL_THRESHOLD = 50; // 快速滚动判定距离阈值
     
     // 添加新函数
     ScrollType detectScrollType(qint64 oldPosition, qint64 newPosition); // 滚动类型识别

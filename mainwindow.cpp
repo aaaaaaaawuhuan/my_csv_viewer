@@ -681,16 +681,56 @@ void MainWindow::preloadData(qint64 centerRow)
 // 滚动类型识别
 ScrollType MainWindow::detectScrollType(qint64 oldPosition, qint64 newPosition)
 {
-    // 根据滚动距离判断是大范围还是小范围滚动
+    qint64 currentTime = QDateTime::currentMSecsSinceEpoch();
     qint64 distance = qAbs(newPosition - oldPosition);
     
-    // 如果滚动距离超过可视区域的一半，则认为是大范围滚动
-    // 否则为小范围滚动
+    PRINT_DEBUG(QString("detectScrollType called - oldPosition: %1, newPosition: %2, distance: %3, m_visibleRows: %4")
+                .arg(oldPosition).arg(newPosition).arg(distance).arg(m_visibleRows));
+
+    // ===== 1. 判断单次大滚动 =====
     if (distance > m_visibleRows / 2) {
+        PRINT_DEBUG(QString("LARGE_SCROLL detected - distance (%1) > m_visibleRows/2 (%2)")
+                    .arg(distance).arg(m_visibleRows / 2));
+        m_lastScrollTime = currentTime;
+        m_rollingDistance = distance;
+        m_rollingStartTime = currentTime;
         return LARGE_SCROLL;
-    } else {
-        return SMALL_SCROLL;
     }
+
+    // ===== 2. 累计滚动判断 =====
+    PRINT_DEBUG(QString("Checking rolling - currentTime: %1, m_lastScrollTime: %2, timeDiff: %3, ROLLING_WINDOW: %4")
+                .arg(currentTime).arg(m_lastScrollTime).arg(currentTime - m_lastScrollTime).arg(ROLLING_WINDOW));
+
+    // 如果距离上次滚动太久，重置累计器
+    if (currentTime - m_lastScrollTime > ROLLING_WINDOW) {
+        PRINT_DEBUG(QString("Resetting rolling accumulator - time difference (%1) > ROLLING_WINDOW (%2)")
+                    .arg(currentTime - m_lastScrollTime).arg(ROLLING_WINDOW));
+        m_rollingDistance = distance;
+        m_rollingStartTime = currentTime;
+    } else {
+        // 在短时间内继续累加
+        PRINT_DEBUG(QString("Adding to rolling distance - old m_rollingDistance: %1, adding distance: %2, new m_rollingDistance: %3")
+                    .arg(m_rollingDistance).arg(distance).arg(m_rollingDistance + distance));
+        m_rollingDistance += distance;
+    }
+
+    m_lastScrollTime = currentTime;
+    
+    PRINT_DEBUG(QString("Checking FAST_SCROLL_THRESHOLD - m_rollingDistance: %1, FAST_SCROLL_THRESHOLD: %2")
+                .arg(m_rollingDistance).arg(FAST_SCROLL_THRESHOLD));
+
+    // 检查累计距离是否超过阈值
+    if (m_rollingDistance > FAST_SCROLL_THRESHOLD) {
+        // 触发大滚动，并重置累计器
+        PRINT_DEBUG(QString("LARGE_SCROLL detected - m_rollingDistance (%1) > FAST_SCROLL_THRESHOLD (%2). Resetting accumulator.")
+                    .arg(m_rollingDistance).arg(FAST_SCROLL_THRESHOLD));
+        m_rollingDistance = 0;
+        m_rollingStartTime = 0;
+        return LARGE_SCROLL;
+    }
+    
+    PRINT_DEBUG(QString("SMALL_SCROLL detected - m_rollingDistance: %1").arg(m_rollingDistance));
+    return SMALL_SCROLL;
 }
 
 // 大范围滚动处理
@@ -704,7 +744,7 @@ void MainWindow::handleLargeScroll(qint64 targetPosition)
     // 3. 请求数据加载
     emit requestRowsData(startRow + 1, rowCount); // +1是因为跳过表头
     m_statusManager->startTiming(tr("加载数据"));
-    m_preloadTimer->start(500);     // 500ms 延迟
+    m_preloadTimer->start(1000);     // 500ms 延迟
     // 4. 更新当前起始行
     m_currentStartRow = targetPosition;
 }
