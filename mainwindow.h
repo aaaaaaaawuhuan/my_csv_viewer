@@ -10,6 +10,8 @@
 #include <QThread>
 #include <QVector>
 #include <QMap>
+#include <QSet>
+#include <QItemSelectionModel>
 #include <QTimer>
 #include <QTreeWidget>
 #include <QMenu>
@@ -67,6 +69,10 @@ private slots:
     void onAddBookmarkTriggered();
     void onRemoveBookmarkTriggered();
 
+    // 高亮相关槽函数
+    void onHighlightRowTriggered();
+    void onHighlightColumnTriggered();
+
 protected:
     void resizeEvent(QResizeEvent *event) override; // 添加窗口大小改变事件处理
     void wheelEvent(QWheelEvent *event) override;   // 添加鼠标滚轮事件处理
@@ -92,7 +98,14 @@ private:
     int m_defaultRowHeight; // 默认行高
     QMap<QString, qint64> m_bookmarks; // 书签映射，键为书签名称，值为行号
     QMenu *m_contextMenu; // 右键菜单
-    StatusManager *m_statusManager; // 状态栏管理器
+    StatusManager *m_statusManager;
+
+    // 存储高亮的行和列
+    QSet<int> m_highlightedRows;    // 存储高亮行的索引
+    QSet<int> m_highlightedColumns; // 存储高亮列的索引
+    
+    // 当前右键点击的位置信息
+    QPoint m_lastContextMenuPos; // 状态栏管理器
     
     // 添加新函数
     ScrollType detectScrollType(qint64 oldPosition, qint64 newPosition); // 滚动类型识别

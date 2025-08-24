@@ -107,9 +107,21 @@ MainWindow::MainWindow(QWidget *parent)
     
     // 初始化右键菜单
     m_contextMenu = new QMenu(this);
+    
+    // 添加书签菜单项
     QAction *addBookmarkAction = new QAction(tr("添加当前行为书签"), this);
     connect(addBookmarkAction, &QAction::triggered, this, &MainWindow::onAddBookmarkTriggered);
     m_contextMenu->addAction(addBookmarkAction);
+    
+    // 添加高亮菜单项
+    QAction *highlightRowAction = new QAction(tr("将此行高亮显示"), this);
+    connect(highlightRowAction, &QAction::triggered, this, &MainWindow::onHighlightRowTriggered);
+    m_contextMenu->addAction(highlightRowAction);
+    
+    QAction *highlightColumnAction = new QAction(tr("将此列高亮显示"), this);
+    connect(highlightColumnAction, &QAction::triggered, this, &MainWindow::onHighlightColumnTriggered);
+    m_contextMenu->addAction(highlightColumnAction);
+    
     ui->tableView->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(ui->tableView, &QTableView::customContextMenuRequested, this, &MainWindow::showContextMenu);
 }
@@ -777,6 +789,9 @@ void MainWindow::contextMenuEvent(QContextMenuEvent *event)
 
 void MainWindow::showContextMenu(const QPoint &pos)
 {
+    // 保存右键点击的位置信息
+    m_lastContextMenuPos = pos;
+    
     // 将视图坐标转换为全局坐标
     QPoint globalPos = ui->tableView->viewport()->mapToGlobal(pos);
     
@@ -1072,4 +1087,79 @@ void MainWindow::onRemoveBookmarkTriggered()
         // 更新书签列表
         updateBookmarkList();
     }
+}
+
+void MainWindow::onHighlightRowTriggered()
+{
+    // 从保存的位置获取模型索引
+    QModelIndex index = ui->tableView->indexAt(m_lastContextMenuPos);
+    if (!index.isValid()) {
+        PRINT_DEBUG("无效的索引位置");
+        return;
+    }
+    
+    // 获取TableModel指针
+    TableModel *model = qobject_cast<TableModel*>(ui->tableView->model());
+    if (!model) {
+        PRINT_DEBUG("无法获取TableModel");
+        return;
+    }
+    
+    // 计算全局行号（文件中的实际行号）
+    int visibleRow = index.row();
+    int actualRow = model->getVisiableStartRow() + visibleRow;
+    int globalRow = model->getFullDataStartRow() + actualRow + 1; // +1 是因为行号从1开始
+    
+    // 切换高亮状态
+    if (m_highlightedRows.contains(globalRow)) {
+        m_highlightedRows.remove(globalRow);
+        PRINT_DEBUG(QString("取消行高亮: %1").arg(globalRow));
+    } else {
+        m_highlightedRows.insert(globalRow);
+        PRINT_DEBUG(QString("设置行高亮: %1").arg(globalRow));
+    }
+    
+    // 更新模型中的高亮行
+    model->setHighlightedRows(m_highlightedRows);
+}
+
+void MainWindow::onHighlightColumnTriggered()
+{
+    // 从保存的位置获取模型索引
+    QModelIndex index = ui->tableView->indexAt(m_lastContextMenuPos);
+    if (!index.isValid()) {
+        PRINT_DEBUG("无效的索引位置");
+        return;
+    }
+    
+    // 获取TableModel指针
+    TableModel *model = qobject_cast<TableModel*>(ui->tableView->model());
+    if (!model) {
+        PRINT_DEBUG("无法获取TableModel");
+        return;
+    }
+    
+    // 获取选中的列索引
+    int column = index.column();
+    
+    // 获取原始列索引（考虑可能的列筛选）
+    const QVector<int>& selectedColumns = model->getSelectedColumnIndexes();
+    int originalColumn;
+    if (selectedColumns.isEmpty() || column >= selectedColumns.size()) {
+        originalColumn = column;
+    } else {
+        originalColumn = selectedColumns[column];
+    }
+    
+    // 切换高亮状态
+    if (m_highlightedColumns.contains(originalColumn)) {
+        m_highlightedColumns.remove(originalColumn);
+        PRINT_DEBUG(QString("取消列高亮: %1").arg(originalColumn));
+    } else {
+        m_highlightedColumns.insert(originalColumn);
+        PRINT_DEBUG(QString("设置列高亮: %1").arg(originalColumn));
+    }
+    
+    // 更新模型中的高亮列
+    model->setHighlightedColumns(m_highlightedColumns);
 }

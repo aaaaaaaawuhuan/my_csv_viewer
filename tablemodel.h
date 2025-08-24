@@ -38,6 +38,12 @@ public:
     void setNewHighlightedColumns(const QVector<int>& newHighlightedColumns);
     void clearHighlighting();
     
+    // 行和列高亮相关方法
+    void setHighlightedRows(const QSet<int>& highlightedRows);
+    void setHighlightedColumns(const QSet<int>& highlightedColumns);
+    void clearRowHighlighting();
+    void clearColumnHighlighting();
+    
     // 双倍窗口新增方法
     void setModelData(const QVector<QStringList> &data, qint64 startRow); // 设置完整数据（3倍大小）
     void adjustVisibleWindow(qint64 relativeStartRow); // 调整可视窗口
@@ -59,6 +65,8 @@ private:
     QVector<QStringList> m_fullData; // 完整数据（3倍于可视区域）
     QVector<int> m_selectedColumnIndexes; // 选中的列索引
     QVector<int> m_newHighlightedColumnIndexes; // 新筛选的列索引（需要高亮）
+    QSet<int> m_highlightedRows;    // 高亮的行集合（全局行号）
+    QSet<int> m_highlightedColumns; // 高亮的列集合（原始列索引）
     qint64 m_fullDataStartRow; // 完整数据在文件中的起始行号
     qint64 m_visibleStartRow;  // 可视区域在完整数据中的起始行号
     qint64 m_visibleRows;      // 可视区域行数

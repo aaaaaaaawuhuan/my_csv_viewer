@@ -28,8 +28,6 @@ int TableModel::columnCount(const QModelIndex &parent) const
 
 QVariant TableModel::data(const QModelIndex &index, int role) const
 {
-    static int old = 0U;
-
     if (!index.isValid() || index.row() >= m_visibleRows || index.column() >= columnCount())
         return QVariant();
     
@@ -52,6 +50,24 @@ QVariant TableModel::data(const QModelIndex &index, int role) const
     
     if (role == Qt::DisplayRole) {
         return rowData.at(actualColumn);
+    }
+    else if (role == Qt::BackgroundRole) {
+        // 计算全局行号（文件中的实际行号）
+        int globalRow = m_fullDataStartRow + actualRow + 1; // +1 是因为行号从1开始
+        
+        // 检查是否是高亮行或高亮列
+        if (m_highlightedRows.contains(globalRow) && m_highlightedColumns.contains(actualColumn)) {
+            // 同时是高亮行和列，使用更深的颜色
+            return QColor(255, 215, 0, 200); // 金色半透明
+        }
+        else if (m_highlightedRows.contains(globalRow)) {
+            // 高亮行，使用黄色
+            return QColor(255, 255, 153, 150); // 浅黄色半透明
+        }
+        else if (m_highlightedColumns.contains(actualColumn)) {
+            // 高亮列，使用浅绿色
+            return QColor(153, 255, 153, 150); // 浅绿色半透明
+        }
     }
     
     return QVariant();
@@ -320,6 +336,59 @@ void TableModel::clearHighlighting()
     
     // 通知视图水平表头数据已更改
     emit headerDataChanged(Qt::Horizontal, 0, columnCount() - 1);
+}
+
+// 行和列高亮相关方法实现
+void TableModel::setHighlightedRows(const QSet<int>& highlightedRows)
+{
+    m_highlightedRows = highlightedRows;
+    
+    DEBUG_PRINT(QString("设置高亮行数量: %1").arg(m_highlightedRows.size()));
+    
+    // 通知视图数据已更改
+    emit dataChanged(
+        index(0, 0),
+        index(m_visibleRows - 1, columnCount() - 1)
+    );
+}
+
+void TableModel::setHighlightedColumns(const QSet<int>& highlightedColumns)
+{
+    m_highlightedColumns = highlightedColumns;
+    
+    DEBUG_PRINT(QString("设置高亮列数量: %1").arg(m_highlightedColumns.size()));
+    
+    // 通知视图数据已更改
+    emit dataChanged(
+        index(0, 0),
+        index(m_visibleRows - 1, columnCount() - 1)
+    );
+}
+
+void TableModel::clearRowHighlighting()
+{
+    m_highlightedRows.clear();
+    
+    DEBUG_PRINT("清除所有行高亮");
+    
+    // 通知视图数据已更改
+    emit dataChanged(
+        index(0, 0),
+        index(m_visibleRows - 1, columnCount() - 1)
+    );
+}
+
+void TableModel::clearColumnHighlighting()
+{
+    m_highlightedColumns.clear();
+    
+    DEBUG_PRINT("清除所有列高亮");
+    
+    // 通知视图数据已更改
+    emit dataChanged(
+        index(0, 0),
+        index(m_visibleRows - 1, columnCount() - 1)
+    );
 }
 
 const QVector<int>& TableModel::getSelectedColumnIndexes() const
