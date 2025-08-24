@@ -46,6 +46,37 @@ MainWindow::MainWindow(QWidget *parent)
     // 在setupUi之后初始化StatusManager，确保statusBar()返回有效的指针
     m_statusManager = new StatusManager(statusBar());
     
+    // 设置滚动条样式 - 更粗的滚动条
+    ui->verticalScrollBar->setStyleSheet(
+        "QScrollBar:vertical {"
+        "    border: 1px solid #999999;"
+        "    background: white;"
+        "    width: 20px;"
+        "    margin: 0px 0px 0px 0px;"
+        "}"
+        "QScrollBar::handle:vertical {"
+        "    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,"
+        "                                stop: 0 rgb(220, 220, 220), stop: 1 rgb(200, 200, 200));"
+        "    border: 1px solid #666666;"
+        "    border-radius: 4px;"
+        "    min-height: 20px;"
+        "}"
+        "QScrollBar::add-line:vertical {"
+        "    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+        "                                stop: 0 rgb(200, 200, 200), stop: 1 rgb(180, 180, 180));"
+        "    height: 0px;"
+        "    subcontrol-position: bottom;"
+        "    subcontrol-origin: margin;"
+        "}"
+        "QScrollBar::sub-line:vertical {"
+        "    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+        "                                stop: 0 rgb(200, 200, 200), stop: 1 rgb(180, 180, 180));"
+        "    height: 0px;"
+        "    subcontrol-position: top;"
+        "    subcontrol-origin: margin;"
+        "}"
+    );
+    
     // 将数据模型设置到tableView中
     ui->tableView->setModel(m_tableModel);
     
@@ -486,6 +517,41 @@ void MainWindow::onVerticalScrollBarValueChanged(int value)
     m_statusManager->clearPerformanceData();
     qDebug() << "滚动条值变化: value=" << value << ", 当前起始行=" << m_currentStartRow;
     int currentValue = ui->verticalScrollBar->value();
+    
+    // 每次滚动时重启滚动条重置定时器
+    m_scrollBarResetTimer->start(1000); // 1秒后重置滚动条样式
+    
+    // 改变滚动条颜色表示"处理中"
+    ui->verticalScrollBar->setStyleSheet(
+        "QScrollBar:vertical {"
+        "    border: 1px solid #999999;"
+        "    background: white;"
+        "    width: 20px;"
+        "    margin: 0px 0px 0px 0px;"
+        "}"
+        "QScrollBar::handle:vertical {"
+        "    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,"
+        "                                stop: 0 rgba(255, 255, 0, 128), stop: 1 rgba(255, 255, 0, 128));"
+        "    border: 1px solid #666666;"
+        "    border-radius: 4px;"
+        "    min-height: 20px;"
+        "}"
+        "QScrollBar::add-line:vertical {"
+        "    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+        "                                stop: 0 rgb(200, 200, 200), stop: 1 rgb(180, 180, 180));"
+        "    height: 0px;"
+        "    subcontrol-position: bottom;"
+        "    subcontrol-origin: margin;"
+        "}"
+        "QScrollBar::sub-line:vertical {"
+        "    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+        "                                stop: 0 rgb(200, 200, 200), stop: 1 rgb(180, 180, 180));"
+        "    height: 0px;"
+        "    subcontrol-position: top;"
+        "    subcontrol-origin: margin;"
+        "}"
+    );
+    
     // 检查是否需要加载新数据
     ScrollType scrollType = detectScrollType(m_lastScrollPosition, currentValue);
 
@@ -779,11 +845,38 @@ void MainWindow::handleSmallScroll(qint64 targetPosition)
  */
 void MainWindow::resetScrollBarColor()
 {
-    // 恢复滚动条默认颜色
-    QPalette pal = ui->verticalScrollBar->palette();
-    pal.setColor(QPalette::Active, QPalette::Highlight, 
-                 style()->standardPalette().color(QPalette::Active, QPalette::Highlight));
-    ui->verticalScrollBar->setPalette(pal);
+    qDebug() << "滚动结束，重置滚动条颜色并触发预加载";
+    
+    // 恢复滚动条默认样式
+    ui->verticalScrollBar->setStyleSheet(
+        "QScrollBar:vertical {"
+        "    border: 1px solid #999999;"
+        "    background: white;"
+        "    width: 20px;"
+        "    margin: 0px 0px 0px 0px;"
+        "}"
+        "QScrollBar::handle:vertical {"
+        "    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,"
+        "                                stop: 0 rgb(220, 220, 220), stop: 1 rgb(200, 200, 200));"
+        "    border: 1px solid #666666;"
+        "    border-radius: 4px;"
+        "    min-height: 20px;"
+        "}"
+        "QScrollBar::add-line:vertical {"
+        "    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+        "                                stop: 0 rgb(200, 200, 200), stop: 1 rgb(180, 180, 180));"
+        "    height: 0px;"
+        "    subcontrol-position: bottom;"
+        "    subcontrol-origin: margin;"
+        "}"
+        "QScrollBar::sub-line:vertical {"
+        "    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+        "                                stop: 0 rgb(200, 200, 200), stop: 1 rgb(180, 180, 180));"
+        "    height: 0px;"
+        "    subcontrol-position: top;"
+        "    subcontrol-origin: margin;"
+        "}"
+    );
 }
 
 //考虑将滚动条从1开始
