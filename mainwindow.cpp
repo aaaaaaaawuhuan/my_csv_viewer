@@ -368,6 +368,8 @@ void MainWindow::onInitializationDataReceived(const QVector<QString> &headers)
     
     // 结束文件初始化计时
     m_statusManager->endTiming(tr("文件初始化"));
+    m_statusManager->setFileName(m_fileName);
+    m_statusManager->updateStatusBar();
 }
 
 void MainWindow::onRowsDataReceived(const struct CsvRowData &rowData, qint64 startRow)
@@ -409,9 +411,6 @@ void MainWindow::onRowsDataReceived(const struct CsvRowData &rowData, qint64 sta
     m_currentStartRow = startRow;
     
     m_statusManager->endTiming(tr("加载数据"));
-    
-    // 更新状态栏信息
-    m_statusManager->updateFileStatus(m_fileName, m_currentStartRow, m_visibleRows, m_totalRows);
 }
 
 void MainWindow::generateColumnCheckboxes(const QVector<QString> &headers)
@@ -492,9 +491,6 @@ void MainWindow::onVerticalScrollBarValueChanged(int value)
     
     // 更新当前起始行
     m_currentStartRow = currentValue;
-    
-    // 更新状态栏信息
-    m_statusManager->updateFileStatus(m_fileName, m_currentStartRow, m_visibleRows, m_totalRows);
 }
 
 void MainWindow::resizeEvent(QResizeEvent *event)
@@ -504,11 +500,14 @@ void MainWindow::resizeEvent(QResizeEvent *event)
     // 更新可视行数
     updateVisibleRows();
     
-    // 更新滚动条范围
-    updateScrollBarRange();
-    
-    // 重新加载当前可视区域数据以适应新大小
-    handleLargeScroll(ui->verticalScrollBar->value());
+    if(m_fileName != "")
+    {
+        // 更新滚动条范围
+        updateScrollBarRange();
+
+        // 重新加载当前可视区域数据以适应新大小
+        handleLargeScroll(ui->verticalScrollBar->value());
+    }
 }
 
 void MainWindow::wheelEvent(QWheelEvent *event)

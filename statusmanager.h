@@ -20,6 +20,8 @@ class StatusManager : public QObject
     Q_OBJECT
 public:
     explicit StatusManager(QStatusBar *statusBar, QObject *parent = nullptr);
+
+    void setFileName(const QString &fileName);
     
     /**
      * @brief 开始计时
@@ -36,10 +38,9 @@ public:
     
     /**
      * @brief 更新状态栏显示
-     * @param positionInfo 当前位置信息
      * @param additionalInfo 额外信息
      */
-    void updateStatusBar(const QString &positionInfo = "", const QString &additionalInfo = "");
+    void updateStatusBar(const QString &additionalInfo = "");
     
     /**
      * @brief 更新文件相关的状态栏信息
@@ -80,7 +81,10 @@ private:
     QStatusBar *m_statusBar; // 状态栏指针
     QElapsedTimer m_timer; // 计时器
     QMap<QString, qint64> m_performanceData; // 性能数据
-    
+    QMap<QString, qint64> m_timingOperations; // 存储每个操作的开始时间戳
+    bool m_isTimerActive; // 计时器是否激活
+    QString m_fileInfo;
+
     /**
      * @brief 格式化性能统计信息
      * @return 格式化后的性能统计字符串

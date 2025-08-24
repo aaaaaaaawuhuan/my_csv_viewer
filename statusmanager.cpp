@@ -6,9 +6,20 @@
 StatusManager::StatusManager(QStatusBar *statusBar, QObject *parent)
     : QObject(parent)
     , m_statusBar(statusBar)
+    , m_isTimerActive(false)
+    , m_fileInfo("")
 {
     if (!m_statusBar) {
         qWarning() << "StatusManager initialized without valid QStatusBar pointer";
+    }
+}
+
+void StatusManager::setFileName(const QString &fileName)
+{
+    if (!fileName.isEmpty()) {
+        QFileInfo fileInfoObj(fileName);
+        m_fileInfo = QString("[文件: %1]")
+                       .arg(fileInfoObj.fileName());
     }
 }
 
@@ -19,8 +30,16 @@ void StatusManager::startTiming(const QString &operation)
         return;
     }
     
-    m_timer.start();
-    STATUS_DEBUG_PRINT("Started timing for operation: " + operation);
+    if (!m_isTimerActive) {
+        m_timer.start();
+        m_isTimerActive = true;
+        STATUS_DEBUG_PRINT("Started main timer");
+    }
+    
+    qint64 currentTime = m_timer.elapsed();
+    m_timingOperations[operation] = currentTime;
+    
+    STATUS_DEBUG_PRINT(QString("Started timing for operation: %1").arg(operation));
     
     // 在状态栏显示正在执行的操作
     m_statusBar->showMessage(tr("正在执行%1...").arg(operation));
@@ -33,13 +52,21 @@ qint64 StatusManager::endTiming(const QString &operation)
         return -1;
     }
     
-    if (!m_timer.isValid()) {
-        STATUS_DEBUG_PRINT("Timer not started for operation: " + operation);
+    if (!m_isTimerActive || !m_timingOperations.contains(operation)) {
+        STATUS_DEBUG_PRINT(QString("No active timing operation found for: %1").arg(operation));
         return -1;
     }
     
-    qint64 elapsed = m_timer.elapsed();
+    qint64 currentTime = m_timer.elapsed();
+    qint64 startTime = m_timingOperations.take(operation);
+    qint64 elapsed = currentTime - startTime;
     m_performanceData[operation] = elapsed;
+    
+    // 如果没有更多计时操作，停用计时器
+    if (m_timingOperations.isEmpty()) {
+        m_isTimerActive = false;
+        STATUS_DEBUG_PRINT("All timing operations completed, timer deactivated");
+    }
     
     STATUS_DEBUG_PRINT(QString("Operation '%1' took %2 ms").arg(operation).arg(elapsed));
     
@@ -49,7 +76,7 @@ qint64 StatusManager::endTiming(const QString &operation)
     return elapsed;
 }
 
-void StatusManager::updateStatusBar(const QString &positionInfo, const QString &additionalInfo)
+void StatusManager::updateStatusBar(const QString &additionalInfo)
 {
     if (!m_statusBar) {
         return;
@@ -57,11 +84,6 @@ void StatusManager::updateStatusBar(const QString &positionInfo, const QString &
     
     // 构建完整的状态栏消息
     QString message;
-    
-    // 添加位置信息
-    if (!positionInfo.isEmpty()) {
-        message = positionInfo;
-    }
     
     // 添加性能统计信息
     QString performanceInfo = formatPerformanceInfo();
@@ -80,6 +102,13 @@ void StatusManager::updateStatusBar(const QString &positionInfo, const QString &
         message += additionalInfo;
     }
     
+    // 添加文件信息
+    if (!m_fileInfo.isEmpty()) {
+        if (!message.isEmpty()) {
+            message += " ";
+        }
+        message += m_fileInfo;
+    }
     // 如果没有任何信息，显示就绪状态
     if (message.isEmpty()) {
         message = tr("就绪");
@@ -89,29 +118,6 @@ void StatusManager::updateStatusBar(const QString &positionInfo, const QString &
     m_statusBar->showMessage(message);
     
     STATUS_DEBUG_PRINT("Status bar updated: " + message);
-}
-
-void StatusManager::updateFileStatus(const QString &fileName, qint64 startRow, qint64 visibleRows, qint64 totalRows)
-{
-    // 构建文件位置信息
-    QString positionInfo;
-    if (totalRows > 0 && visibleRows > 0) {
-        positionInfo = QString("显示行 %1-%2 (共%3行)")
-            .arg(startRow + 1)
-            .arg(qMin(startRow + visibleRows, totalRows))
-            .arg(totalRows);
-    }
-    
-    // 添加文件名信息
-    QString fileInfo;
-    if (!fileName.isEmpty()) {
-        QFileInfo fileInfoObj(fileName);
-        fileInfo = QString("[文件: %1]")
-            .arg(fileInfoObj.fileName());
-    }
-    
-    // 更新状态栏
-    updateStatusBar(positionInfo, fileInfo);
 }
 
 void StatusManager::mergePerformanceData(const QString &source, const QMap<QString, qint64> &performanceData)
@@ -134,6 +140,9 @@ void StatusManager::mergePerformanceData(const QString &source, const QMap<QStri
 void StatusManager::clearPerformanceData()
 {
     m_performanceData.clear();
+    m_timingOperations.clear();
+    m_isTimerActive = false;
+    m_timer.invalidate();
     STATUS_DEBUG_PRINT("Performance data cleared");
 }
 
